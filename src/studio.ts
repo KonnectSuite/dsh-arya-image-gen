@@ -4,8 +4,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import { resolveProvider, selectComfyUIWorkflow, type Config } from './config.js'
 import { editComfyUIImage, generateComfyUIImage } from './comfyui.js'
 import { comfyProgress } from './comfyui-progress.js'
-import { COMFYUI_IMAGE_PLACEHOLDER, hasComfyUIImagePlaceholder } from './comfyui-workflow.js'
+import { COMFYUI_IMAGE_PLACEHOLDER, detectWorkflowCapabilities, hasComfyUIImagePlaceholder } from './comfyui-workflow.js'
 import {
+  COMFYUI_SIZE_PRESETS,
   DEFAULT_COMFYUI_TIMEOUT_MS,
   PROVIDER_DISPLAY_NAMES,
   resolveComfyUIWorkflows,
@@ -28,19 +29,27 @@ const WORKFLOW_LABEL = 'ComfyUI'
 export function describeStudio(config: Config): StudioConfigResponse {
   const workflows = resolveComfyUIWorkflows(config)
   const modelOptions: StudioOption[] = workflows.map(workflow => ({ value: workflow.name, label: workflow.name }))
-  const profiles: StudioProviderProfile[] = workflows.map(workflow => ({
-    provider: 'comfyui',
-    label: WORKFLOW_LABEL,
-    model: workflow.name,
-    modelOptions,
-    configured: true,
-    // A workflow edits only when its JSON declares the {{image}} input.
-    supportsEditing: hasComfyUIImagePlaceholder(workflow.json),
-    ratioOptions: [],
-    qualityOptions: [],
-    defaultRatio: 'auto',
-    defaultQuality: 'auto',
-  }))
+  const profiles: StudioProviderProfile[] = workflows.map(workflow => {
+    const capabilities = detectWorkflowCapabilities(workflow.json)
+    const adjustableSize = capabilities.placeholders.width || capabilities.placeholders.height
+    return {
+      provider: 'comfyui' as const,
+      label: WORKFLOW_LABEL,
+      model: workflow.name,
+      modelOptions,
+      configured: true,
+      // A workflow edits only when its JSON declares the {{image}} input.
+      supportsEditing: hasComfyUIImagePlaceholder(workflow.json),
+      ratioOptions: [],
+      qualityOptions: [],
+      defaultRatio: 'auto',
+      defaultQuality: 'auto',
+      role: capabilities.role,
+      params: capabilities.placeholders,
+      ...(adjustableSize ? { sizePresets: [...COMFYUI_SIZE_PRESETS] } : {}),
+      ...(capabilities.bakedSize === undefined ? {} : { bakedSize: capabilities.bakedSize }),
+    }
+  })
   const activeWorkflow = modelOptions.some(option => option.value === config.comfyuiActiveWorkflow)
     ? config.comfyuiActiveWorkflow
     : workflows[0]?.name
@@ -64,6 +73,15 @@ export async function generateFromStudio(
   } catch (error) {
     if (input.jobId !== undefined) comfyProgress.finish(input.jobId, 'error', messageOf(error))
     throw error
+  }
+}
+
+function studioParams(input: StudioGenerateRequest): { width?: number; height?: number; steps?: number; cfg?: number } {
+  return {
+    ...(typeof input.width === 'number' ? { width: input.width } : {}),
+    ...(typeof input.height === 'number' ? { height: input.height } : {}),
+    ...(typeof input.steps === 'number' ? { steps: input.steps } : {}),
+    ...(typeof input.cfg === 'number' ? { cfg: input.cfg } : {}),
   }
 }
 
@@ -116,6 +134,7 @@ async function runStudioGeneration(
         timeoutMs: active.timeoutMs,
         maxBytes: ctx.attachments.imageLimits.maxImageBytes,
         signal,
+        ...studioParams(input),
       })
       : await generateComfyUIImage({
         baseURL: active.baseURL,
@@ -126,6 +145,7 @@ async function runStudioGeneration(
         timeoutMs: active.timeoutMs,
         maxBytes: ctx.attachments.imageLimits.maxImageBytes,
         signal,
+        ...studioParams(input),
       })
     if (!ctx.attachments.imageLimits.mediaTypes.includes(generated.mediaType)) {
       throw new Error(`This DSH deployment does not accept ${generated.mediaType} generated images`)

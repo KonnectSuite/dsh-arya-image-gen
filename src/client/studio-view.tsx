@@ -112,6 +112,13 @@ export interface StudioWorkspaceProps {
   sessionIds?: readonly string[] | undefined
 }
 
+
+/** Parse a size field, falling back when it is empty or not a positive number. */
+function sizeOf(value: string, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback
+}
+
 export const StudioView: FC<{
   locale?: LocaleService | undefined
   /** Host credential-change notifier; re-reads provider sign-in state silently. */
@@ -174,6 +181,11 @@ export const StudioView: FC<{
   const [quality, setQuality] = useState('1K')
   const [resolution, setResolution] = useState('1K')
   const [generationQuality, setGenerationQuality] = useState(PROVIDER_DEFAULT_QUALITY)
+  /** Size and sampling fields, shown only for workflows that declare the placeholders. */
+  const [sizeWidth, setSizeWidth] = useState('1024')
+  const [sizeHeight, setSizeHeight] = useState('1024')
+  const [steps, setSteps] = useState('')
+  const [cfg, setCfg] = useState('')
   const [watermark, setWatermark] = useState<StudioWatermark>('default')
   const [prompt, setPrompt] = useState('')
   const [references, setReferences] = useState<StudioReferenceItem[]>([])
@@ -972,6 +984,10 @@ export const StudioView: FC<{
           ...((provider as string) === 'openai-compat' ? { generationQuality: selectedGenerationQuality } : {}),
           ...(watermarkCapability.status === 'supported' ? { watermark } : {}),
           ...(count > 1 ? { count } : {}),
+          ...(activeProfile.params?.width === true ? { width: sizeOf(sizeWidth, 1024) } : {}),
+          ...(activeProfile.params?.height === true ? { height: sizeOf(sizeHeight, 1024) } : {}),
+          ...(activeProfile.params?.steps === true && steps.trim().length > 0 ? { steps: sizeOf(steps, 8) } : {}),
+          ...(activeProfile.params?.cfg === true && cfg.trim().length > 0 ? { cfg: Number(cfg) } : {}),
           ...(workspace?.path ? { workspaceRoot: workspace.path } : {}),
           ...(referencesPayload === undefined ? {} : {
             references: referencesPayload,
@@ -1765,6 +1781,41 @@ export const StudioView: FC<{
                 </details>
                 {activeProfile !== undefined && mode === 'edit' && !activeProfile.supportsEditing ? <div className="dsh-ig-inline-note">{t('workflowEditUnsupported')}</div> : null}
                 <div className="dsh-ig-field"><label>{t('count')}</label><div className="dsh-ig-count-row">{[1, 2, 3, 4].map(option => <button key={option} type="button" className={`dsh-ig-count-pill ${count === option ? 'is-active' : ''}`} onClick={() => setCount(option)}>{t('countUnit', { n: String(option) })}</button>)}</div></div>
+                {activeProfile !== undefined && (activeProfile.params?.width === true || activeProfile.params?.height === true) ? (
+                  <div className="dsh-ig-field">
+                    <label>Size</label>
+                    <div className="dsh-ig-count-row">
+                      {(activeProfile.sizePresets ?? []).map(preset => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className={`dsh-ig-count-pill ${Number(sizeWidth) === preset.width && Number(sizeHeight) === preset.height ? 'is-active' : ''}`}
+                          onClick={() => { setSizeWidth(String(preset.width)); setSizeHeight(String(preset.height)) }}
+                        >{preset.label}</button>
+                      ))}
+                    </div>
+                    <div className="dsh-ig-count-row" style={{ marginTop: 6 }}>
+                      <input className="dsh-ig-input" style={{ width: 84 }} value={sizeWidth} inputMode="numeric" aria-label="Width" onChange={event => setSizeWidth(event.target.value)} />
+                      <span>×</span>
+                      <input className="dsh-ig-input" style={{ width: 84 }} value={sizeHeight} inputMode="numeric" aria-label="Height" onChange={event => setSizeHeight(event.target.value)} />
+                    </div>
+                  </div>
+                ) : null}
+                {activeProfile !== undefined && (activeProfile.params?.steps === true || activeProfile.params?.cfg === true) ? (
+                  <details className="dsh-ig-workflow-advanced">
+                    <summary>Sampling</summary>
+                    {activeProfile.params?.steps === true ? (
+                      <label className="dsh-ig-inline-field">Steps
+                        <input className="dsh-ig-input" style={{ width: 84 }} value={steps} placeholder="default" inputMode="numeric" onChange={event => setSteps(event.target.value)} />
+                      </label>
+                    ) : null}
+                    {activeProfile.params?.cfg === true ? (
+                      <label className="dsh-ig-inline-field">CFG
+                        <input className="dsh-ig-input" style={{ width: 84 }} value={cfg} placeholder="default" inputMode="decimal" onChange={event => setCfg(event.target.value)} />
+                      </label>
+                    ) : null}
+                  </details>
+                ) : null}
               </>}
             </>}
             {config !== null && allWorkflows.length === 0 ? <div className="dsh-ig-inline-note">{t('noProvider')}</div> : null}

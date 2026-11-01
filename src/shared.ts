@@ -306,6 +306,14 @@ export interface StudioProviderProfile {
   qualityOptions: StudioOption[]
   defaultRatio: string
   defaultQuality: string
+  /** Role the workflow runs as, so the workbench can filter by mode. */
+  role?: ComfyUIWorkflowRole
+  /** Numeric parameters this workflow accepts through placeholders. */
+  params?: { width: boolean; height: boolean; steps: boolean; cfg: boolean }
+  /** Canvas presets offered when the workflow accepts width/height. */
+  sizePresets?: { id: string; label: string; width: number; height: number }[]
+  /** Size the workflow bakes when it has no size placeholders. */
+  bakedSize?: { width: number; height: number }
   /** Compatibility fields: ComfyUI profiles never carry these values. */
   channel?: string
   editModel?: string
@@ -414,6 +422,11 @@ export interface StudioGenerateRequest {
   references?: StudioReference[]
   count?: number | undefined
   workspaceRoot?: string | undefined
+  /** Numeric parameters, accepted only when the chosen workflow declares them. */
+  width?: number | undefined
+  height?: number | undefined
+  steps?: number | undefined
+  cfg?: number | undefined
   /** Compatibility fields accepted from older clients and ignored by ComfyUI. */
   channel?: string
   ratio?: string
@@ -514,6 +527,77 @@ export function comfyUIEndpointURL(baseURL: string, path: string): URL {
 }
 
 
+/** What a workflow is used for; auto-detected from `{{image}}` unless overridden. */
+export type ComfyUIWorkflowRole = 'text-to-image' | 'image-to-image'
+
+/** Generation parameters a workflow may expose through numeric placeholders. */
+export interface ComfyUIGenerationParams {
+  width?: number
+  height?: number
+  steps?: number
+  cfg?: number
+}
+
+/** Which parameters one workflow exposes, plus the size it bakes when fixed. */
+export interface ComfyUIWorkflowCapabilities {
+  role: ComfyUIWorkflowRole
+  placeholders: { width: boolean; height: boolean; steps: boolean; cfg: boolean }
+  bakedSize?: { width: number; height: number }
+}
+
+/**
+ * Canvas presets offered wherever a workflow accepts width/height.
+ *
+ * They mirror the sizes the Qwen Turbo graphs ship with, so one templated
+ * workflow replaces the square/portrait/wide trio.
+ */
+export const COMFYUI_SIZE_PRESETS: readonly { id: string; label: string; width: number; height: number }[] = [
+  { id: 'square', label: 'Square 1024', width: 1024, height: 1024 },
+  { id: 'portrait', label: 'Portrait 768x1344', width: 768, height: 1344 },
+  { id: 'wide', label: 'Wide 1344x768', width: 1344, height: 768 },
+]
+
+/**
+ * Read a workflow's role, adjustable parameters and baked size from its JSON.
+ *
+ * Browser-safe and total: malformed JSON yields a text-to-image workflow with
+ * no adjustable parameters, so the settings card can describe a broken import
+ * instead of throwing while rendering.
+ *
+ * @param json - API-format workflow JSON.
+ * @returns detected capabilities.
+ */
+export function describeWorkflowJson(json: string): ComfyUIWorkflowCapabilities {
+  const placeholders = { width: false, height: false, steps: false, cfg: false }
+  const role: ComfyUIWorkflowRole = json.includes('{{image}}') || json.includes('%image%') ? 'image-to-image' : 'text-to-image'
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    return { role, placeholders }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { role, placeholders }
+  let bakedWidth: number | undefined
+  let bakedHeight: number | undefined
+  for (const node of Object.values(parsed as Record<string, unknown>)) {
+    if (typeof node !== 'object' || node === null) continue
+    const inputs = (node as { inputs?: unknown }).inputs
+    if (typeof inputs !== 'object' || inputs === null || Array.isArray(inputs)) continue
+    const record = inputs as Record<string, unknown>
+    if (record['width'] === '{{width}}') placeholders.width = true
+    if (record['height'] === '{{height}}') placeholders.height = true
+    if (record['steps'] === '{{steps}}') placeholders.steps = true
+    if (record['cfg'] === '{{cfg}}') placeholders.cfg = true
+    if (bakedWidth === undefined && typeof record['width'] === 'number') bakedWidth = record['width']
+    if (bakedHeight === undefined && typeof record['height'] === 'number') bakedHeight = record['height']
+  }
+  return {
+    role,
+    placeholders,
+    ...(bakedWidth === undefined || bakedHeight === undefined ? {} : { bakedSize: { width: bakedWidth, height: bakedHeight } }),
+  }
+}
+
 /** One named ComfyUI API-format workflow imported through settings. */
 export interface ComfyUIWorkflowEntry {
   /** Unique human-readable label; used as the result model and by tool calls. */
@@ -522,6 +606,53 @@ export interface ComfyUIWorkflowEntry {
   json: string
   /** Optional preset prepended to the user prompt on every call of this workflow. */
   presetPrompt?: string
+  /** Explicit role; omitted means it is detected from the JSON. */
+  role?: ComfyUIWorkflowRole
+}
+
+/**
+ * The role a workflow runs as.
+ *
+ * A workflow that declares `{{image}}` cannot run without a source image, so it
+ * is image-to-image; everything else is text-to-image. An explicit role wins,
+ * which is how a workflow can be reclassified without editing its JSON.
+ *
+ * @param entry - workflow entry.
+ * @returns the role it should appear under.
+ */
+export function resolveWorkflowRole(entry: ComfyUIWorkflowEntry): ComfyUIWorkflowRole {
+  return entry.role ?? (entry.json.includes('{{image}}') || entry.json.includes('%image%') ? 'image-to-image' : 'text-to-image')
+}
+
+/** Workflows belonging to one role, in import order. */
+export function workflowsByRole(entries: readonly ComfyUIWorkflowEntry[], role: ComfyUIWorkflowRole): ComfyUIWorkflowEntry[] {
+  return entries.filter(entry => resolveWorkflowRole(entry) === role)
+}
+
+/**
+ * The workflow generation or editing should use without an explicit choice.
+ *
+ * Each role has its own remembered selection. The legacy single active workflow
+ * still seeds the text-to-image slot, so existing configs keep generating.
+ *
+ * @param source - workflow settings.
+ * @param role - which role is asking.
+ * @returns the active entry for that role, or undefined.
+ */
+export function activeWorkflowForRole(source: ComfyUIWorkflowSource, role: ComfyUIWorkflowRole): ComfyUIWorkflowEntry | undefined {
+  const entries = resolveComfyUIWorkflows(source)
+  if (entries.length === 0) return undefined
+  const preferred = role === 'image-to-image'
+    ? source.comfyuiActiveEditWorkflow
+    : source.comfyuiActiveTextWorkflow ?? source.comfyuiActiveWorkflow
+  const named = typeof preferred === 'string' ? preferred.trim() : ''
+  if (named.length > 0) {
+    const match = entries.find(entry => entry.name === named && resolveWorkflowRole(entry) === role)
+    if (match !== undefined) return match
+  }
+  const candidates = workflowsByRole(entries, role)
+  if (candidates.length > 0) return candidates[0]
+  return role === 'text-to-image' ? entries[0] : undefined
 }
 
 /** Raw ComfyUI workflow fields as persisted through DSH Settings. */
@@ -530,6 +661,10 @@ export interface ComfyUIWorkflowSource {
   comfyuiWorkflows?: readonly ComfyUIWorkflowEntry[]
   /** Name of the entry ComfyUI calls use by default. */
   comfyuiActiveWorkflow?: string
+  /** Active workflow for generation. */
+  comfyuiActiveTextWorkflow?: string
+  /** Active workflow for image-to-image editing. */
+  comfyuiActiveEditWorkflow?: string
   /** Legacy single-workflow storage; synced to the active entry for downgrades. */
   comfyuiWorkflowJson?: string
   comfyuiWorkflowName?: string
@@ -543,7 +678,13 @@ export function resolveComfyUIWorkflows(source: ComfyUIWorkflowSource): ComfyUIW
     const json = typeof entry?.json === 'string' ? entry.json : ''
     if (name.length > 0 && json.trim().length > 0) {
       const presetPrompt = typeof entry.presetPrompt === 'string' ? entry.presetPrompt.trim() : ''
-      named.push(presetPrompt.length > 0 ? { name, json, presetPrompt } : { name, json })
+      const role = entry.role === 'text-to-image' || entry.role === 'image-to-image' ? entry.role : undefined
+      named.push({
+        name,
+        json,
+        ...(presetPrompt.length > 0 ? { presetPrompt } : {}),
+        ...(role === undefined ? {} : { role }),
+      })
     }
   }
   if (named.length > 0) return named

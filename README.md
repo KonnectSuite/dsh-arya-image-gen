@@ -58,14 +58,19 @@ DSH ships no official plugin market, so the AryaCode market is a plugin index yo
 
 ## Workflows
 
-ComfyUI workflows are the "models" of this plugin. Each imported JSON becomes a selectable option in the chat pill, the Studio model picker, and the comparison view.
+ComfyUI workflows are the "models" of this plugin. Each imported JSON becomes a selectable option in the Studio model picker, the comparison view, and the chat tools.
+
+Workflows are grouped by role: **Text to image** and **Image to image**, detected from the JSON and overridable per workflow. Each group remembers its own active workflow, so `edit_image` uses the edit graph without you switching anything.
 
 - Put `{{prompt}}` in the prompt input of the workflow. It is required.
 - Put `{{seed}}` where a random seed should be injected.
-- For image-to-image, put `{{image}}` exactly once in the LoadImage image input. Such workflows appear as edit-capable; generation-only workflows cannot run `edit_image`.
+- For image-to-image, put `{{image}}` exactly once in the LoadImage image input; that is what makes a workflow edit-capable.
+- Put `{{width}}`, `{{height}}`, `{{steps}}` or `{{cfg}}` on numeric inputs to let a call adjust them — one templated workflow then covers every size instead of one JSON per size.
 - A workflow preset prompt is prepended to every user prompt for that workflow, separated by a comma.
 
 Export from ComfyUI with **Save (API Format)**. UI-format workflows are not supported.
+
+Placeholders, roles, size presets and the one-workflow-per-size conversion are documented in [docs/comfyui-workflows.md](docs/comfyui-workflows.md).
 
 ## Server Control
 

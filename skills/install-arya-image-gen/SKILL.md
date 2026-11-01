@@ -19,7 +19,8 @@ description: Install, configure, verify, or remove the dsh-arya-image-gen Bundle
 7. Open the Plugins panel from the left sidebar, click Arya Image Gen under Installed, and on the plugin page:
    - Set the ComfyUI endpoint (default `http://127.0.0.1:8188`).
    - Import a ComfyUI API-format workflow JSON containing `{{prompt}}` (and `{{image}}` for editing).
-   - Import the workflows, then mark the active one.
+   - Workflows land in Text to image or Image to image automatically; each group keeps its own active workflow, and a role can be overridden in the row.
+   - To let a call change size or sampling, put `{{width}}`/`{{height}}`/`{{steps}}`/`{{cfg}}` on numeric inputs; one templated workflow then covers every size.
    - Use Start / Stop / Restart to control the local ComfyUI process, or configure the Python path, ComfyUI directory, extra arguments, and auto-start.
 8. Test with a simple prompt. Confirm one `generate_image` call succeeds and its image renders in the conversation.
 

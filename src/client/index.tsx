@@ -34,13 +34,16 @@ import {
   MAX_COMFYUI_WORKFLOW_BYTES,
   STUDIO_ROUTE,
   activeComfyUIWorkflow,
+  describeWorkflowJson,
   isLocalComfyUIEndpoint,
   parseComfyUIHeaders,
   progressJobIdForCall,
   resolveComfyUIWorkflows,
+  resolveWorkflowRole,
   uniqueComfyUIWorkflowName,
   type ComfyUIServerStatus,
   type ComfyUIWorkflowEntry,
+  type ComfyUIWorkflowRole,
   type ImageProvider,
   type StudioGenerateResponse,
 } from '../shared.js'
@@ -354,6 +357,14 @@ const STYLE = `
 .dsh-ig-file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary,inherit);font-size:12px}
 .dsh-ig-workflow-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .dsh-ig-workflow-row{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--dsw-alias-border-l2,#eee);border-radius:8px}
+.dsh-ig-workflow-group{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.dsh-ig-workflow-group-head{display:flex;align-items:center;gap:8px}
+.dsh-ig-workflow-group-title{font-size:12.5px;font-weight:650;letter-spacing:.02em}
+.dsh-ig-workflow-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.dsh-ig-workflow-chip{font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:2px 7px;border-radius:999px;background:rgba(43,108,255,.08);color:#2B6CFF;border:1px solid rgba(43,108,255,.18)}
+.dsh-ig-workflow-role{height:26px;border:1px solid var(--dsw-alias-border-l2,#eee);border-radius:6px;background:transparent;color:inherit;font-size:11.5px;padding:0 6px}
+.dsh-ig-import-summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(0,224,210,.10);border:1px solid rgba(0,224,210,.35);font-size:12px}
+.dsh-ig-workflow-group-empty{font-size:12px;color:var(--dsw-alias-label-tertiary,#717b90)}
 .dsh-ig-workflow-main{display:flex;align-items:center;gap:8px}
 .dsh-ig-workflow-active{display:inline-flex;align-items:center;cursor:pointer;flex:none}
 .dsh-ig-workflow-active input[type=radio]{width:15px;height:15px;accent-color:var(--dsw-alias-brand-primary,#4c78ff);margin:0;cursor:pointer}
@@ -946,6 +957,8 @@ interface ImageSettings {
   comfyuiBaseURL?: string
   comfyuiWorkflows?: ComfyUIWorkflowEntry[]
   comfyuiActiveWorkflow?: string
+  comfyuiActiveTextWorkflow?: string
+  comfyuiActiveEditWorkflow?: string
   comfyuiWorkflowJson?: string
   comfyuiWorkflowName?: string
   comfyuiTimeoutMs?: number
@@ -994,6 +1007,8 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
   const [renderHealth, setRenderHealth] = useState<{ available: boolean; family?: string; version?: string } | null>(null)
   const [presets, setPresets] = useState<Record<string, string>>({})
   const [activeWorkflow, setActiveWorkflow] = useState('')
+  const [editActiveWorkflow, setEditActiveWorkflow] = useState('')
+  const [importSummary, setImportSummary] = useState<{ name: string; role: ComfyUIWorkflowRole; chips: string[]; warning?: string } | null>(null)
   const [workflows, setWorkflows] = useState<ComfyUIWorkflowEntry[]>([])
   const [status, setStatus] = useState<ComfyUIServerStatus | null>(null)
   const [serverBusy, setServerBusy] = useState(false)
@@ -1021,8 +1036,9 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     const entries = resolveComfyUIWorkflows(value ?? {})
     setWorkflows(entries)
     setPresets(Object.fromEntries(entries.map(entry => [entry.name, entry.presetPrompt ?? ''])))
-    setActiveWorkflow(activeComfyUIWorkflow(value ?? {})?.name ?? '')
-  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiHeadersJson, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.showProviderPill, value?.renderBrowserPath, value?.renderDefaultWidth, value?.renderDefaultHeight, value?.renderBackground, value?.renderSaveSource])
+    setActiveWorkflow(value?.comfyuiActiveTextWorkflow || (activeComfyUIWorkflow(value ?? {})?.name ?? ''))
+    setEditActiveWorkflow(value?.comfyuiActiveEditWorkflow ?? '')
+  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiHeadersJson, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.showProviderPill, value?.comfyuiActiveTextWorkflow, value?.comfyuiActiveEditWorkflow, value?.renderBrowserPath, value?.renderDefaultWidth, value?.renderDefaultHeight, value?.renderBackground, value?.renderSaveSource])
 
   // Probe the renderer once when the card opens; a missing browser is a
   // setting to fix, not an error to hide until the first render fails.
@@ -1120,10 +1136,37 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
       const text = await file.text()
       validateComfyUIWorkflowJson(text)
       const name = uniqueComfyUIWorkflowName(file.name.replace(/\.json$/i, ''), workflows.map(entry => entry.name))
+      const capabilities = describeWorkflowJson(text)
       const next = [...workflows, { name, json: text }]
       await save('comfyuiWorkflows', next)
-      if (activeWorkflow.length === 0) {
+
+      // Say what the plugin understood, including whether a sibling already
+      // covers the same role and size.
+      const chips = [
+        ...(capabilities.placeholders.width && capabilities.placeholders.height
+          ? ['adjustable size']
+          : capabilities.bakedSize === undefined ? [] : [`baked ${String(capabilities.bakedSize.width)}x${String(capabilities.bakedSize.height)}`]),
+        ...(capabilities.placeholders.steps ? ['steps'] : []),
+        ...(capabilities.placeholders.cfg ? ['cfg'] : []),
+      ]
+      const duplicate = workflows.some(entry => {
+        if (resolveWorkflowRole(entry) !== capabilities.role) return false
+        const other = describeWorkflowJson(entry.json)
+        if (other.placeholders.width && capabilities.placeholders.width) return false
+        return other.bakedSize?.width === capabilities.bakedSize?.width && other.bakedSize?.height === capabilities.bakedSize?.height
+      })
+      setImportSummary({
+        name,
+        role: capabilities.role,
+        chips,
+        ...(duplicate ? { warning: 'A workflow with the same role and size is already imported; one of them is probably redundant.' } : {}),
+      })
+
+      if (capabilities.role === 'image-to-image') {
+        if (editActiveWorkflow.length === 0) { setEditActiveWorkflow(name); void save('comfyuiActiveEditWorkflow', name) }
+      } else if (activeWorkflow.length === 0) {
         setActiveWorkflow(name)
+        void save('comfyuiActiveTextWorkflow', name)
         void save('comfyuiActiveWorkflow', name)
       }
     } catch (cause) {
@@ -1158,9 +1201,25 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
       : entry))
   }
 
-  const selectActive = (name: string): void => {
+  const selectActive = (name: string, role: ComfyUIWorkflowRole): void => {
+    if (role === 'image-to-image') {
+      setEditActiveWorkflow(name)
+      void save('comfyuiActiveEditWorkflow', name)
+      return
+    }
     setActiveWorkflow(name)
+    void save('comfyuiActiveTextWorkflow', name)
+    // Keep the legacy single key in step for builds without per-role fields.
     void save('comfyuiActiveWorkflow', name)
+  }
+
+  /** Persist an explicit role, or clear it so detection decides again. */
+  const setWorkflowRole = (name: string, role: ComfyUIWorkflowRole | 'auto'): void => {
+    persistWorkflows(workflows.map(entry => {
+      if (entry.name !== name) return entry
+      const { role: _ignored, ...rest } = entry
+      return role === 'auto' ? rest : { ...rest, role }
+    }))
   }
 
   const remote = !isLocalComfyUIEndpoint(endpoint)
@@ -1249,21 +1308,63 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
             <button type="button" className="dsh-ig-btn-secondary" onClick={() => { fileRef.current?.click() }} disabled={disabled || importing}>{importing ? 'Importing…' : 'Import workflow JSON'}</button>
             <input ref={fileRef} type="file" accept="application/json,.json" onChange={event => { void importWorkflow(event) }} hidden />
           </div>
-          <span className="dsh-ig-hint">Export an API-format JSON from ComfyUI and put {"{{prompt}}"} in its prompt input; {"{{seed}}"} is available for a random seed. For image editing put {"{{image}}"} (exactly once) in the LoadImage image input.</span>
-          {workflows.length === 0 ? <p className="dsh-ig-status" role="note">No workflows imported yet. Import one to enable generation.</p> : (
-            <div className="dsh-ig-workflow-list">
-              {workflows.map(entry => (
-                <div key={entry.name} className={`dsh-ig-workflow-row${entry.name === activeWorkflow ? ' is-active' : ''}`}>
-                  <label className="dsh-ig-workflow-head">
-                    <input type="radio" name="dsh-ig-active-workflow" checked={entry.name === activeWorkflow} onChange={() => selectActive(entry.name)} disabled={disabled} />
-                    <span className="dsh-ig-workflow-name" title={entry.name}>{entry.name}</span>
-                  </label>
-                  <input className="dsh-ig-input" value={presets[entry.name] ?? ''} placeholder="Preset prompt (optional)" onChange={event => setPresets(current => ({ ...current, [entry.name]: event.target.value }))} onBlur={() => commitPreset(entry.name)} onKeyDown={event => { if (event.key === 'Enter') commitPreset(entry.name) }} disabled={disabled} />
-                  <button type="button" className="dsh-ig-btn-secondary dsh-ig-btn-danger" onClick={() => removeWorkflow(entry.name)} disabled={disabled}>Remove</button>
-                </div>
-              ))}
+          <span className="dsh-ig-hint">Export an API-format JSON from ComfyUI and put {"{{prompt}}"} in its prompt input; {"{{seed}}"} is available for a random seed. For image editing put {"{{image}}"} (exactly once) in the LoadImage image input. Add {"{{width}}"}, {"{{height}}"}, {"{{steps}}"} or {"{{cfg}}"} to numeric inputs to let calls adjust them.</span>
+
+          {importSummary !== null && (
+            <div className="dsh-ig-import-summary">
+              <strong>{importSummary.name}</strong>
+              <span>detected: {importSummary.role === 'image-to-image' ? 'image to image' : 'text to image'}</span>
+              {importSummary.chips.map(chip => <span key={chip} className="dsh-ig-workflow-chip">{chip}</span>)}
+              {importSummary.warning !== undefined && <span className="dsh-ig-status-error">{importSummary.warning}</span>}
             </div>
           )}
+
+          {([
+            { role: 'text-to-image' as const, title: 'Text to image', empty: 'No text-to-image workflow yet. Import one whose prompt input uses {{prompt}}.' },
+            { role: 'image-to-image' as const, title: 'Image to image', empty: 'No image-to-image workflow yet. Add {{image}} to a LoadImage input; editing needs it.' },
+          ]).map(section => {
+            const entries = workflows.filter(entry => resolveWorkflowRole(entry) === section.role)
+            const activeName = section.role === 'text-to-image' ? activeWorkflow : editActiveWorkflow
+            return (
+              <div className="dsh-ig-workflow-group" key={section.role}>
+                <div className="dsh-ig-workflow-group-head">
+                  <span className="dsh-ig-workflow-group-title">{section.title}</span>
+                  <span className="dsh-ig-count-badge">{entries.length}</span>
+                </div>
+                {entries.length === 0 ? <span className="dsh-ig-workflow-group-empty">{section.empty}</span> : (
+                  <div className="dsh-ig-workflow-list">
+                    {entries.map(entry => {
+                      const capabilities = describeWorkflowJson(entry.json)
+                      return (
+                        <div key={entry.name} className={`dsh-ig-workflow-row${entry.name === activeName ? ' is-active' : ''}`}>
+                          <label className="dsh-ig-workflow-head">
+                            <input type="radio" name={`dsh-ig-active-${section.role}`} checked={entry.name === activeName} onChange={() => selectActive(entry.name, section.role)} disabled={disabled} />
+                            <span className="dsh-ig-workflow-name" title={entry.name}>{entry.name}</span>
+                          </label>
+                          <div className="dsh-ig-workflow-meta">
+                            {capabilities.placeholders.width && capabilities.placeholders.height
+                              ? <span className="dsh-ig-workflow-chip">adjustable size</span>
+                              : capabilities.bakedSize === undefined
+                                ? null
+                                : <span className="dsh-ig-workflow-chip">baked {capabilities.bakedSize.width}x{capabilities.bakedSize.height}</span>}
+                            {capabilities.placeholders.steps && <span className="dsh-ig-workflow-chip">steps</span>}
+                            {capabilities.placeholders.cfg && <span className="dsh-ig-workflow-chip">cfg</span>}
+                            <select className="dsh-ig-workflow-role" value={entry.role ?? 'auto'} onChange={event => setWorkflowRole(entry.name, event.target.value as ComfyUIWorkflowRole | 'auto')} disabled={disabled} aria-label={`Role for ${entry.name}`}>
+                              <option value="auto">Auto role</option>
+                              <option value="text-to-image">Text to image</option>
+                              <option value="image-to-image">Image to image</option>
+                            </select>
+                          </div>
+                          <input className="dsh-ig-input" value={presets[entry.name] ?? ''} placeholder="Preset prompt (optional)" onChange={event => setPresets(current => ({ ...current, [entry.name]: event.target.value }))} onBlur={() => commitPreset(entry.name)} onKeyDown={event => { if (event.key === 'Enter') commitPreset(entry.name) }} disabled={disabled} />
+                          <button type="button" className="dsh-ig-btn-secondary dsh-ig-btn-danger" onClick={() => removeWorkflow(entry.name)} disabled={disabled}>Remove</button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         <div className="dsh-ig-section">

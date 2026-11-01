@@ -10,8 +10,11 @@ import {
   DEFAULT_COMFYUI_WORKFLOW_LABEL,
   IMAGE_PROVIDERS,
   activeComfyUIWorkflow,
+  activeWorkflowForRole,
   resolveComfyUIWorkflows,
+  resolveWorkflowRole,
   type ComfyUIWorkflowEntry,
+  type ComfyUIWorkflowRole,
   type ImageProvider,
   type RenderDefaults,
 } from './shared.js'
@@ -42,6 +45,10 @@ export interface Config {
   comfyuiWorkflows?: ComfyUIWorkflowEntry[]
   /** Name of the workflow ComfyUI calls use by default. */
   comfyuiActiveWorkflow?: string
+  /** Active workflow for text-to-image generation. */
+  comfyuiActiveTextWorkflow?: string
+  /** Active workflow for image-to-image editing. */
+  comfyuiActiveEditWorkflow?: string
   /** Legacy single-workflow storage; synced to the active entry for downgrades. */
   comfyuiWorkflowJson?: string
   /** Original imported file name of the legacy single workflow. */
@@ -104,6 +111,8 @@ export const Config = z.object({
   comfyuiBaseURL: volatile(z.string().default(DEFAULT_COMFYUI_BASE_URL)),
   comfyuiWorkflows: volatile(z.array(z.object({ name: z.string(), json: z.string(), presetPrompt: z.string().default('') })).default([])),
   comfyuiActiveWorkflow: volatile(z.string().default('')),
+  comfyuiActiveTextWorkflow: volatile(z.string().default('')),
+  comfyuiActiveEditWorkflow: volatile(z.string().default('')),
   comfyuiWorkflowJson: volatile(z.string().default('')),
   comfyuiWorkflowName: volatile(z.string().default('')),
   comfyuiTimeoutMs: volatile(z.number().min(1_000).max(3_600_000).default(DEFAULT_COMFYUI_TIMEOUT_MS)),
@@ -206,8 +215,47 @@ export function selectComfyUIWorkflow(
   return workflow
 }
 
-/** Parse the space-separated extra main.py arguments; quotes keep grouped values together. */
-export function parseComfyUIExtraArgs(value: string | undefined): string[] {
+/**
+ * Pick the workflow a call runs, honouring the role it needs.
+ *
+ * Generation resolves the active text-to-image workflow and editing resolves
+ * the active image-to-image one, so a caller never has to know which graph is
+ * which. Naming a workflow explicitly still works, but naming one from the
+ * other role fails with the name of the workflow that would have worked.
+ *
+ * @param config - current plugin configuration.
+ * @param role - role the call needs.
+ * @param requested - optional workflow name from the tool arguments.
+ * @returns the workflow to run.
+ */
+export function selectWorkflowForRole(config: Config, role: ComfyUIWorkflowRole, requested?: string): ComfyUIWorkflowEntry {
+  const entries = resolveComfyUIWorkflows(config)
+  const want = role === 'image-to-image' ? 'image-to-image' : 'text-to-image'
+  const name = typeof requested === 'string' ? requested.trim() : ''
+  if (name.length > 0) {
+    const bare = name.replace(/\.json$/i, '').toLowerCase()
+    const match = entries.find(entry => entry.name === name)
+      ?? entries.find(entry => entry.name.replace(/\.json$/i, '').toLowerCase() === bare)
+    if (match === undefined) {
+      throw new Error(`No ComfyUI workflow named "${name}" is configured. Available workflows: ${entries.map(entry => entry.name).join(', ')}.`)
+    }
+    const matchRole = resolveWorkflowRole(match)
+    if (matchRole !== want) {
+      const alternative = activeWorkflowForRole(config, want) ?? entries.find(entry => resolveWorkflowRole(entry) === want)
+      throw new Error(
+        `"${match.name}" is a ${matchRole} workflow; this call needs ${want}.${alternative === undefined ? ` Import a ${want} workflow in Settings > Plugins > Arya Image Gen.` : ` Use "${alternative.name}" instead, or omit workflow to let the plugin pick it.`}`,
+      )
+    }
+    return match
+  }
+  const chosen = activeWorkflowForRole(config, want)
+  if (chosen === undefined) {
+    throw new Error(`No ${want} workflow is imported. Import one in Settings > Plugins > Arya Image Gen${want === 'image-to-image' ? ' (a workflow with an {{image}} input)' : ''}.`)
+  }
+  return chosen
+}
+
+/** Parse the space-separated extra main.py arguments; quotes keep grouped values together. */export function parseComfyUIExtraArgs(value: string | undefined): string[] {
   const text = (value ?? DEFAULT_COMFYUI_EXTRA_ARGS).trim()
   if (text.length === 0) return []
   const tokens: string[] = []

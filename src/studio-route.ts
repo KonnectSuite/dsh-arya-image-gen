@@ -128,12 +128,28 @@ export function parseStudioGenerateRequest(value: unknown): StudioGenerateReques
     }
     count = input.count
   }
+  const bounded = (key: 'width' | 'height' | 'steps' | 'cfg', min: number, max: number, integer: boolean): number | undefined => {
+    const raw = input[key]
+    if (raw === undefined) return undefined
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) throw new Error(`${key} must be a number.`)
+    const value = integer ? Math.round(raw) : raw
+    if (value < min || value > max) throw new Error(`${key} must be between ${String(min)} and ${String(max)}.`)
+    return value
+  }
+  const width = bounded('width', 64, 8192, true)
+  const height = bounded('height', 64, 8192, true)
+  const steps = bounded('steps', 1, 150, true)
+  const cfg = bounded('cfg', 0, 30, false)
   return {
     mode: input.mode,
     provider: 'comfyui',
     model,
     prompt,
     ...(count !== undefined ? { count } : {}),
+    ...(width === undefined ? {} : { width }),
+    ...(height === undefined ? {} : { height }),
+    ...(steps === undefined ? {} : { steps }),
+    ...(cfg === undefined ? {} : { cfg }),
     ...(jobId === undefined ? {} : { jobId }),
     ...(references.length > 0 ? { references, reference: references[0] } : {}),
     ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),

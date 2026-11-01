@@ -4,7 +4,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { SettingsForms } from '@deepseek-ai/dsh-settings'
 import { defineTool, type ToolResult } from '@deepseek-ai/dsh-tools'
-import { Config, resolveProvider, selectComfyUIWorkflow, type ImageProvider } from './config.js'
+import { Config, resolveProvider, selectWorkflowForRole, type ImageProvider } from './config.js'
 import { CanvasMirror } from './canvas-state.js'
 import { serveCanvasState } from './canvas-state-route.js'
 import { serveCanvasAsset } from './canvas-asset-route.js'
@@ -15,7 +15,7 @@ import { editComfyUIImage, generateComfyUIImage, type ComfyUIJobTimings } from '
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
-import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, RENDER_HEALTH_ROUTE, RENDER_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, type ComfyUIServerStatus } from './shared.js'
+import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, RENDER_HEALTH_ROUTE, RENDER_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, type ComfyUIGenerationParams, type ComfyUIServerStatus } from './shared.js'
 import { createInspirationRoute } from './inspiration-route.js'
 import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspiration.js'
 import { describeStudio, generateFromStudio } from './studio.js'
@@ -52,8 +52,23 @@ interface InspirationSearchValue {
   hits: { sourceId: string; id: string; title: string; category: string; prompt: string }[]
 }
 
-/** Optional strings from tool callers may contain empty placeholders (#86). */
-function cleanImageToolArgs<T extends { prompt: string; workflow?: string }>(args: T): T {
+/**
+ * Keep only the adjustable generation parameters a tool call actually supplied.
+ *
+ * The workflow decides which of them it accepts, so passing them all through is
+ * safe: `prepareComfyUIWorkflow` rejects an undeclared parameter with a message
+ * that names the workflow's fix.
+ */
+function generationParams(args: ComfyUIGenerationParams): ComfyUIGenerationParams {
+  return {
+    ...(typeof args.width === 'number' ? { width: args.width } : {}),
+    ...(typeof args.height === 'number' ? { height: args.height } : {}),
+    ...(typeof args.steps === 'number' ? { steps: args.steps } : {}),
+    ...(typeof args.cfg === 'number' ? { cfg: args.cfg } : {}),
+  }
+}
+
+/** Optional strings from tool callers may contain empty placeholders (#86). */function cleanImageToolArgs<T extends { prompt: string; workflow?: string }>(args: T): T {
   const clean = { ...args }
   const fields = clean as Record<string, unknown>
   for (const key of ['workflow']) {
@@ -295,10 +310,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
 
   /** One ComfyUI generation, shared by generate_image and generate_images. */
-  const generateSingle = async (rawArgs: { prompt: string; workflow?: string }, exec: { callId?: string; agent?: { session: { header: { cwd?: string } } }; signal: AbortSignal }): Promise<GeneratedValue> => {
+  const generateSingle = async (rawArgs: ComfyUIGenerationParams & { prompt: string; workflow?: string }, exec: { callId?: string; agent?: { session: { header: { cwd?: string } } }; signal: AbortSignal }): Promise<GeneratedValue> => {
     const args = cleanImageToolArgs(rawArgs)
     const active = resolveProvider(current())
-    const workflow = selectComfyUIWorkflow(active, args.workflow)
+    const workflow = selectWorkflowForRole(current(), 'text-to-image', args.workflow)
     const jobId = typeof exec.callId === 'string' && exec.callId.length > 0 ? progressJobIdForCall(exec.callId) : undefined
     if (jobId !== undefined) comfyProgress.ensure(jobId, { baseURL: active.baseURL, headers: active.headers, workflowJson: workflow.json })
     let generated: Awaited<ReturnType<typeof generateComfyUIImage>>
@@ -311,6 +326,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         timeoutMs: active.timeoutMs,
         maxBytes: ctx.attachments.imageLimits.maxImageBytes,
         signal: exec.signal,
+        ...generationParams(args),
         ...(jobId === undefined ? {} : { clientId: jobId }),
       })
     } catch (error) {
@@ -326,7 +342,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     description: 'Generate a new image with the configured local ComfyUI workflow. Use when the user asks to create or draw a new image; use edit_image instead when they want to change an existing image. Give a complete visual prompt including subject, composition, style, lighting, and any exact text that should appear. The workflow defines the output size; the optional workflow argument picks a configured workflow for this call only when the user asks for a specific one. A successful image is attached directly to the conversation and may also be saved under the session workspace. Do not call read, glob, or other tools to locate or verify the image.',
     parameters: {
       prompt: { type: 'string', required: true, description: 'Complete description of the image to generate.' },
-      workflow: { type: 'string', description: 'Optional name of the ComfyUI workflow to run; omit to use the active workflow from settings.' },
+      workflow: { type: 'string', description: 'Optional name of the ComfyUI workflow to run; omit to use the active text-to-image workflow from settings.' },
+      width: { type: 'integer', description: 'Optional output width in pixels, when the workflow declares {{width}}.' },
+      height: { type: 'integer', description: 'Optional output height in pixels, when the workflow declares {{height}}.' },
+      steps: { type: 'integer', description: 'Optional sampling steps, when the workflow declares {{steps}}.' },
+      cfg: { type: 'number', description: 'Optional cfg scale, when the workflow declares {{cfg}}.' },
     },
     output: imageOutput('Generated'),
     async execute(args, exec): Promise<GeneratedValue> {
@@ -340,7 +360,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     description: 'Generate several images in one call, one per prompt, in order. Use for batches, variations, or illustration sets; prefer generate_image for a single image. Every successful image is attached to the conversation and may be saved under the session workspace. Items generate sequentially; a failed item is reported in the failures list and does not abort the rest. The optional workflow argument applies to every item.',
     parameters: {
       prompts: { type: 'array', items: { type: 'string' }, required: true, description: 'Ordered complete prompts; one image is generated per entry (1-10).' },
-      workflow: { type: 'string', description: 'Optional name of the ComfyUI workflow to run; omit to use the active workflow from settings.' },
+      workflow: { type: 'string', description: 'Optional name of the ComfyUI workflow to run; omit to use the active text-to-image workflow from settings.' },
+      width: { type: 'integer', description: 'Optional output width applied to every item, when the workflow declares {{width}}.' },
+      height: { type: 'integer', description: 'Optional output height applied to every item, when the workflow declares {{height}}.' },
+      steps: { type: 'integer', description: 'Optional sampling steps, when the workflow declares {{steps}}.' },
+      cfg: { type: 'number', description: 'Optional cfg scale, when the workflow declares {{cfg}}.' },
     },
     output: {
       schema: {
@@ -383,6 +407,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           const value = await generateSingle({
             prompt,
             ...(args.workflow !== undefined ? { workflow: args.workflow } : {}),
+            ...generationParams(args),
           }, exec)
           images.push({ ...value, prompt })
         } catch (error) {
@@ -404,7 +429,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       source_attachment_ids: { type: 'array', items: { type: 'string' }, description: 'Optional ordered attachment ids of multiple images already present in the current conversation. Prompt references such as image 1 and image 2 follow this order. ComfyUI edits the first image.' },
       source_path: { type: 'string', description: 'Optional absolute or workspace-relative path of a specific image file inside the active session workspace. Prefer this when the user names a saved file.' },
       source_paths: { type: 'array', items: { type: 'string' }, description: 'Optional ordered absolute paths of multiple image files inside the active session workspace. ComfyUI edits the first image.' },
-      workflow: { type: 'string', description: 'Optional name of the ComfyUI edit workflow to run (one with an image input); omit to use the active workflow from settings.' },
+      workflow: { type: 'string', description: 'Optional name of the ComfyUI edit workflow to run (one with an image input); omit to use the active image-to-image workflow.' },
+      width: { type: 'integer', description: 'Optional output width in pixels, when the edit workflow declares {{width}}.' },
+      height: { type: 'integer', description: 'Optional output height in pixels, when the edit workflow declares {{height}}.' },
+      steps: { type: 'integer', description: 'Optional sampling steps, when the edit workflow declares {{steps}}.' },
+      cfg: { type: 'number', description: 'Optional cfg scale, when the edit workflow declares {{cfg}}.' },
     },
     output: imageOutput('Edited'),
     async execute(rawArgs, exec): Promise<GeneratedValue> {
@@ -443,7 +472,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
       const sourceImage = sourceImages[0]
       if (sourceImage === undefined) throw new Error('edit_image requires a reference image')
-      const workflow = selectComfyUIWorkflow(active, args.workflow)
+      const workflow = selectWorkflowForRole(current(), 'image-to-image', args.workflow)
       const jobId = typeof exec.callId === 'string' && exec.callId.length > 0 ? progressJobIdForCall(exec.callId) : undefined
       if (jobId !== undefined) comfyProgress.ensure(jobId, { baseURL: active.baseURL, headers: active.headers, workflowJson: workflow.json })
       let generated: Awaited<ReturnType<typeof editComfyUIImage>>
@@ -457,6 +486,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           timeoutMs: active.timeoutMs,
           maxBytes: ctx.attachments.imageLimits.maxImageBytes,
           signal: exec.signal,
+          ...generationParams(args as ComfyUIGenerationParams & { prompt: string }),
           ...(jobId === undefined ? {} : { clientId: jobId }),
         })
       } catch (error) {

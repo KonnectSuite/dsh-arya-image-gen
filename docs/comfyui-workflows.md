@@ -1,5 +1,7 @@
 # ComfyUI workflows: roles, placeholders and sizes
 
+> No ComfyUI yet? Start with [install-comfyui.md](install-comfyui.md); this page assumes one is running.
+
 The Workflows card groups imports by what they do, and a workflow can expose
 the settings a call is allowed to change. Both exist for one reason: you should
 not need a separate JSON per size.

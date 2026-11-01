@@ -5,6 +5,7 @@ description: Install, configure, verify, or remove the dsh-arya-image-gen Bundle
 
 # Install Arya Image Gen
 
+0. If the user has no ComfyUI yet, point them at `docs/install-comfyui.md` in this repository before anything else.
 1. Confirm `dsh` runs and record `dsh --version`.
 2. Ask which Web profile to change if the user did not name one. Default to `web` only when that profile already exists.
 3. Install the pinned package or repository spec the user provides:

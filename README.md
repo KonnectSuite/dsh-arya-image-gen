@@ -174,7 +174,7 @@ Set the browser path, default canvas size and background in **Settings → Plugi
 ## Requirements
 
 - DeepSeek Harness with the web profile.
-- A running ComfyUI instance reachable from the DSH host (local or remote).
+- A running ComfyUI instance reachable from the DSH host (local or remote). No install yet? See **[docs/install-comfyui.md](docs/install-comfyui.md)** for the desktop app, portable build, comfy-cli and manual routes.
 - Node.js `^22.19.0 || >=24.0.0` for development.
 
 ## Development

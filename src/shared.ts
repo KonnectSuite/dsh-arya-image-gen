@@ -309,10 +309,51 @@ export const DEFAULT_COMFYUI_TIMEOUT_MS = 300_000
 export const DEFAULT_COMFYUI_WORKFLOW_LABEL = 'API workflow'
 export const MAX_COMFYUI_WORKFLOW_BYTES = 5 * 1024 * 1024
 
-/** Default process-launch values matching the Comfy-Desktop install layout. */
-export const DEFAULT_COMFYUI_PYTHON_EXE = 'C:\\Users\\KNPhu\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Installs\\ComfyUI\\ComfyUI\\.venv\\Scripts\\python.exe'
-export const DEFAULT_COMFYUI_SERVER_DIR = 'C:\\Users\\KNPhu\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Installs\\ComfyUI\\ComfyUI'
+/**
+ * Local launch values are intentionally empty: the server layout differs per
+ * machine, and a prefilled path from another computer is worse than none.
+ */
+export const DEFAULT_COMFYUI_PYTHON_EXE = ''
+export const DEFAULT_COMFYUI_SERVER_DIR = ''
 export const DEFAULT_COMFYUI_EXTRA_ARGS = '--listen 127.0.0.1 --disable-auto-launch'
+
+/** True when the endpoint points at this machine, so process controls apply. */
+export function isLocalComfyUIEndpoint(baseURL: string): boolean {
+  try {
+    const host = new URL(baseURL.trim()).hostname.toLowerCase().replace(/^\[|\]$/g, '')
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost')
+  } catch {
+    return true
+  }
+}
+
+/** Parse the optional custom request headers (JSON object of strings). */
+export function parseComfyUIHeaders(value: string | undefined): Record<string, string> {
+  const text = (value ?? '').trim()
+  if (text.length === 0) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error('Custom headers must be a JSON object, for example {"Authorization": "Bearer token"}.')
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('Custom headers must be a JSON object of string values.')
+  }
+  const headers: Record<string, string> = {}
+  for (const [name, headerValue] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof headerValue !== 'string') throw new Error(`Custom header "${name}" must be a string.`)
+    headers[name] = headerValue
+  }
+  return headers
+}
+
+/** Resolve a ComfyUI API path against the configured base URL, keeping any subpath. */
+export function comfyUIEndpointURL(baseURL: string, path: string): URL {
+  const normalized = baseURL.trim().endsWith('/') ? baseURL.trim() : `${baseURL.trim()}/`
+  return new URL(path.replace(/^\//, ''), normalized)
+}
+
 
 /** One named ComfyUI API-format workflow imported through settings. */
 export interface ComfyUIWorkflowEntry {

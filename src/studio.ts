@@ -78,6 +78,7 @@ export async function generateFromStudio(
     const generated = input.mode === 'edit'
       ? await editComfyUIImage({
         baseURL: active.baseURL,
+        headers: active.headers,
         workflowJson: workflow.json,
         prompt: promptWithPreset(workflow, input.prompt),
         sourceImage: { data: sourceImages[0]!.data, mediaType: sourceImages[0]!.mediaType },
@@ -87,6 +88,7 @@ export async function generateFromStudio(
       })
       : await generateComfyUIImage({
         baseURL: active.baseURL,
+        headers: active.headers,
         workflowJson: workflow.json,
         prompt: promptWithPreset(workflow, input.prompt),
         timeoutMs: active.timeoutMs,

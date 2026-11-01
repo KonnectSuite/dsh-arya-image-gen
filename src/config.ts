@@ -1,6 +1,7 @@
 /** User-facing configuration for the local ComfyUI image provider. */
 import z from '@deepseek-ai/schemastery'
 import {
+  parseComfyUIHeaders,
   DEFAULT_COMFYUI_BASE_URL,
   DEFAULT_COMFYUI_EXTRA_ARGS,
   DEFAULT_COMFYUI_PYTHON_EXE,
@@ -45,6 +46,8 @@ export interface Config {
   /** Original imported file name of the legacy single workflow. */
   comfyuiWorkflowName?: string
   comfyuiTimeoutMs?: number
+  /** Optional request headers as a JSON object, e.g. a reverse-proxy Authorization token. */
+  comfyuiHeadersJson?: string
   /** Python interpreter used by the built-in ComfyUI server launcher. */
   comfyuiPythonExe?: string
   /** ComfyUI checkout directory the server is launched from (main.py lives here). */
@@ -86,6 +89,7 @@ export const Config = z.object({
   comfyuiWorkflowJson: volatile(z.string().default('')),
   comfyuiWorkflowName: volatile(z.string().default('')),
   comfyuiTimeoutMs: volatile(z.number().min(1_000).max(3_600_000).default(DEFAULT_COMFYUI_TIMEOUT_MS)),
+  comfyuiHeadersJson: volatile(z.string().default('')),
   comfyuiPythonExe: volatile(z.string().default(DEFAULT_COMFYUI_PYTHON_EXE)),
   comfyuiServerDir: volatile(z.string().default(DEFAULT_COMFYUI_SERVER_DIR)),
   comfyuiExtraArgs: volatile(z.string().default(DEFAULT_COMFYUI_EXTRA_ARGS)),
@@ -99,6 +103,7 @@ export const Config = z.object({
 export function resolveProvider(config: Config): {
   provider: 'comfyui'
   baseURL: string
+  headers: Record<string, string>
   workflows: ComfyUIWorkflowEntry[]
   workflow?: ComfyUIWorkflowEntry
   timeoutMs: number
@@ -108,6 +113,7 @@ export function resolveProvider(config: Config): {
   return {
     provider: 'comfyui',
     baseURL: config.comfyuiBaseURL ?? DEFAULT_COMFYUI_BASE_URL,
+    headers: parseComfyUIHeaders(config.comfyuiHeadersJson),
     workflows,
     ...(workflow === undefined ? {} : { workflow }),
     timeoutMs: config.comfyuiTimeoutMs ?? DEFAULT_COMFYUI_TIMEOUT_MS,

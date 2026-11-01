@@ -15,7 +15,7 @@ import { editComfyUIImage, generateComfyUIImage } from './comfyui.js'
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
-import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMPORT_ROUTE, INSPIRATION_ROUTE, STUDIO_ROUTE, mergeComfyUIPrompt, type ComfyUIServerStatus } from './shared.js'
+import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMPORT_ROUTE, INSPIRATION_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, type ComfyUIServerStatus } from './shared.js'
 import { createInspirationRoute } from './inspiration-route.js'
 import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspiration.js'
 import { describeStudio, generateFromStudio } from './studio.js'
@@ -242,6 +242,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const bootTimer = setTimeout(() => {
       void (async () => {
         try {
+          if (!isLocalComfyUIEndpoint(current().comfyuiBaseURL ?? '')) return
           const status = await serverManager.status()
           if (status.up) return
           await serverManager.start()
@@ -260,6 +261,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const workflow = selectComfyUIWorkflow(active, args.workflow)
     const generated = await generateComfyUIImage({
       baseURL: active.baseURL,
+      headers: active.headers,
       workflowJson: workflow.json,
       prompt: mergeComfyUIPrompt(workflow.presetPrompt, args.prompt),
       timeoutMs: active.timeoutMs,
@@ -394,6 +396,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const workflow = selectComfyUIWorkflow(active, args.workflow)
       const generated = await editComfyUIImage({
         baseURL: active.baseURL,
+        headers: active.headers,
         workflowJson: workflow.json,
         prompt: mergeComfyUIPrompt(workflow.presetPrompt, args.prompt),
         sourceImage: { data: sourceImage.data, mediaType: sourceImage.mediaType },

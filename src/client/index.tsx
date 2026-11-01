@@ -1,7 +1,7 @@
 // Must stay the first import: it shims CSS.supports before tldraw's
 // module-scope environment probe runs (#40); see css-supports-shim.ts.
 import './tl/css-supports-shim.js'
-import { useCallback, useEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef, type ChangeEvent, type FormEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { fetchSettingsHealth, settingsState, type SettingsScopeSnapshot, type SettingsState } from './settings-state.js'
@@ -31,6 +31,8 @@ import {
   MAX_COMFYUI_WORKFLOW_BYTES,
   STUDIO_ROUTE,
   activeComfyUIWorkflow,
+  isLocalComfyUIEndpoint,
+  parseComfyUIHeaders,
   resolveComfyUIWorkflows,
   uniqueComfyUIWorkflowName,
   type ComfyUIServerStatus,
@@ -943,6 +945,8 @@ interface ImageSettings {
   comfyuiWorkflowJson?: string
   comfyuiWorkflowName?: string
   comfyuiTimeoutMs?: number
+  /** Optional request headers as a JSON object, e.g. a reverse-proxy token. */
+  comfyuiHeadersJson?: string
   comfyuiPythonExe?: string
   comfyuiServerDir?: string
   comfyuiExtraArgs?: string
@@ -963,6 +967,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
   // Local editable copies; committed on blur or an explicit button.
   const [endpoint, setEndpoint] = useState('')
   const [timeoutSeconds, setTimeoutSeconds] = useState(300)
+  const [headersJson, setHeadersJson] = useState('')
   const [pythonExe, setPythonExe] = useState('')
   const [serverDir, setServerDir] = useState('')
   const [extraArgs, setExtraArgs] = useState('')
@@ -983,6 +988,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
   useEffect(() => {
     setEndpoint(value?.comfyuiBaseURL ?? DEFAULT_COMFYUI_BASE_URL)
     setTimeoutSeconds(Math.max(1, Math.round((value?.comfyuiTimeoutMs ?? DEFAULT_COMFYUI_TIMEOUT_MS) / 1000)))
+    setHeadersJson(value?.comfyuiHeadersJson ?? '')
     setPythonExe(value?.comfyuiPythonExe ?? DEFAULT_COMFYUI_PYTHON_EXE)
     setServerDir(value?.comfyuiServerDir ?? DEFAULT_COMFYUI_SERVER_DIR)
     setExtraArgs(value?.comfyuiExtraArgs ?? DEFAULT_COMFYUI_EXTRA_ARGS)
@@ -994,7 +1000,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     setWorkflows(entries)
     setPresets(Object.fromEntries(entries.map(entry => [entry.name, entry.presetPrompt ?? ''])))
     setActiveWorkflow(activeComfyUIWorkflow(value ?? {})?.name ?? '')
-  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.showProviderPill])
+  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiHeadersJson, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.showProviderPill])
 
   /** Persist one field; a failed write rolls the local copy back on the next snapshot. */
   const save = async (field: string, next: unknown): Promise<void> => {
@@ -1012,6 +1018,14 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     if (endpoint.trim() !== (value?.comfyuiBaseURL ?? DEFAULT_COMFYUI_BASE_URL)) void save('comfyuiBaseURL', endpoint.trim())
     const nextTimeout = Math.max(1, Math.min(3_600, Math.round(timeoutSeconds))) * 1000
     if (nextTimeout !== (value?.comfyuiTimeoutMs ?? DEFAULT_COMFYUI_TIMEOUT_MS)) void save('comfyuiTimeoutMs', nextTimeout)
+    try {
+      parseComfyUIHeaders(headersJson)
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause))
+      setMessageIsError(true)
+      return
+    }
+    if (headersJson.trim() !== (value?.comfyuiHeadersJson ?? '')) void save('comfyuiHeadersJson', headersJson.trim())
     if (pythonExe.trim() !== (value?.comfyuiPythonExe ?? DEFAULT_COMFYUI_PYTHON_EXE)) void save('comfyuiPythonExe', pythonExe.trim())
     if (serverDir.trim() !== (value?.comfyuiServerDir ?? DEFAULT_COMFYUI_SERVER_DIR)) void save('comfyuiServerDir', serverDir.trim())
     if (extraArgs.trim() !== (value?.comfyuiExtraArgs ?? DEFAULT_COMFYUI_EXTRA_ARGS)) void save('comfyuiExtraArgs', extraArgs.trim())
@@ -1116,6 +1130,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     void save('comfyuiActiveWorkflow', name)
   }
 
+  const remote = !isLocalComfyUIEndpoint(endpoint)
   const statusText = status === null ? 'Checking…'
     : status.up ? `Running · ${status.version ?? 'unknown version'}${status.device === undefined ? '' : ` · ${status.device}`}`
     : status.busy ? 'Starting or stopping…'
@@ -1137,7 +1152,12 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
           <label className="dsh-ig-field">
             <span className="dsh-ig-label">Endpoint</span>
             <input className="dsh-ig-input" value={endpoint} onChange={event => setEndpoint(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_BASE_URL} disabled={disabled} />
-            <span className="dsh-ig-hint">ComfyUI server reachable by the DSH host; the default points at port 8188 on this computer.</span>
+            <span className="dsh-ig-hint">ComfyUI server the DSH host can reach. Local: port 8188 on this computer. Remote: use the server's LAN or public URL, for example http://192.168.1.20:8188 or https://comfy.example.com/.</span>
+          </label>
+          <label className="dsh-ig-field">
+            <span className="dsh-ig-label">Request headers (optional)</span>
+            <input className="dsh-ig-input" value={headersJson} onChange={event => setHeadersJson(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={'{"Authorization": "Bearer <token>"}'} disabled={disabled} />
+            <span className="dsh-ig-hint">JSON object sent with every ComfyUI request. Use it for a reverse proxy's token or Basic auth; leave blank for an open server.</span>
           </label>
           <label className="dsh-ig-field">
             <span className="dsh-ig-label">Generation timeout (seconds)</span>
@@ -1154,30 +1174,40 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
               {statusText}
             </span>
             <div className="dsh-ig-server-actions">
-              <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('start') }} disabled={!writable || serverBusy || status?.up === true}>Start</button>
-              <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('stop') }} disabled={!writable || serverBusy || status?.up !== true}>Stop</button>
-              <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('restart') }} disabled={!writable || serverBusy}>Restart</button>
+              {remote ? null : (
+                <>
+                  <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('start') }} disabled={!writable || serverBusy || status?.up === true}>Start</button>
+                  <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('stop') }} disabled={!writable || serverBusy || status?.up !== true}>Stop</button>
+                  <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('restart') }} disabled={!writable || serverBusy}>Restart</button>
+                </>
+              )}
               <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void refreshStatus() }} disabled={serverBusy}>Refresh</button>
             </div>
           </div>
-          <span className="dsh-ig-hint">Start launches main.py with the configured Python; Stop matches only ComfyUI's own process, never other listeners on the port.</span>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">Python executable</span>
-            <input className="dsh-ig-input" value={pythonExe} onChange={event => setPythonExe(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_PYTHON_EXE} disabled={disabled} />
-          </label>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">ComfyUI directory</span>
-            <input className="dsh-ig-input" value={serverDir} onChange={event => setServerDir(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_SERVER_DIR} disabled={disabled} />
-            <span className="dsh-ig-hint">Directory that contains main.py; the server is launched from here.</span>
-          </label>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">Extra main.py arguments</span>
-            <input className="dsh-ig-input" value={extraArgs} onChange={event => setExtraArgs(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_EXTRA_ARGS} disabled={disabled} />
-          </label>
-          <label className="dsh-ig-check-row">
-            <input type="checkbox" checked={autoStart} onChange={event => { setAutoStart(event.target.checked); void save('comfyuiAutoStart', event.target.checked) }} disabled={disabled} />
-            <span className="dsh-ig-label">Start ComfyUI automatically when the plugin loads</span>
-          </label>
+          {remote ? (
+            <span className="dsh-ig-hint">Remote server: generation, editing, and status use this endpoint. Start / stop run on the server's own machine, so this card only probes it. On that machine, start ComfyUI with --listen 0.0.0.0, open the port in its firewall, and put HTTPS or a proxy token in Request headers when the proxy needs one.</span>
+          ) : (
+            <>
+              <span className="dsh-ig-hint">Start launches main.py with the configured Python; Stop matches only ComfyUI's own process, never other listeners on the port.</span>
+              <label className="dsh-ig-field">
+                <span className="dsh-ig-label">Python executable</span>
+                <input className="dsh-ig-input" value={pythonExe} onChange={event => setPythonExe(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={'C:\\path\\to\\python.exe'} disabled={disabled} />
+              </label>
+              <label className="dsh-ig-field">
+                <span className="dsh-ig-label">ComfyUI directory</span>
+                <input className="dsh-ig-input" value={serverDir} onChange={event => setServerDir(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={'C:\\path\\to\\ComfyUI'} disabled={disabled} />
+                <span className="dsh-ig-hint">Directory that contains main.py; the server is launched from here.</span>
+              </label>
+              <label className="dsh-ig-field">
+                <span className="dsh-ig-label">Extra main.py arguments</span>
+                <input className="dsh-ig-input" value={extraArgs} onChange={event => setExtraArgs(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_EXTRA_ARGS} disabled={disabled} />
+              </label>
+              <label className="dsh-ig-check-row">
+                <input type="checkbox" checked={autoStart} onChange={event => { setAutoStart(event.target.checked); void save('comfyuiAutoStart', event.target.checked) }} disabled={disabled} />
+                <span className="dsh-ig-label">Start ComfyUI automatically when the plugin loads</span>
+              </label>
+            </>
+          )}
         </div>
 
         <div className="dsh-ig-section">

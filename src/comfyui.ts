@@ -25,6 +25,8 @@ interface ComfyUIJobInput {
   baseURL: string
   timeoutMs: number
   signal: AbortSignal
+  /** Extra request headers, e.g. a reverse-proxy Authorization token. */
+  headers?: Record<string, string>
 }
 
 /** Run one ComfyUI text-to-image workflow and return its first final image. */
@@ -75,7 +77,9 @@ async function runJob<T>(input: ComfyUIJobInput, run: (baseURL: URL, signal: Abo
   } catch (error) {
     input.signal.throwIfAborted()
     if (controller.signal.aborted) throw new Error(`ComfyUI generation timed out after ${String(input.timeoutMs)} ms`)
-    if (error instanceof TypeError) throw new Error(`Could not connect to ComfyUI at ${baseURL.origin}`)
+    if (error instanceof TypeError) {
+      throw new Error(`Could not connect to ComfyUI at ${baseURL.href.replace(/\/$/, '')}. For a remote server, start ComfyUI with --listen 0.0.0.0, allow the port through its firewall, and check the URL, credentials, and TLS certificate.`)
+    }
     throw error
   } finally {
     clearTimeout(timeout)
@@ -84,7 +88,7 @@ async function runJob<T>(input: ComfyUIJobInput, run: (baseURL: URL, signal: Abo
 }
 
 /** Upload the source image and return the LoadImage-compatible name ComfyUI stored it under. */
-async function uploadSourceImage(baseURL: URL, image: ComfyUISourceImage, signal: AbortSignal): Promise<string> {
+async function uploadSourceImage(baseURL: URL, image: ComfyUISourceImage, signal: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<string> {
   const filename = uploadFilename(image.mediaType)
   // Copy into a fresh ArrayBuffer-backed view so the bytes are a valid BlobPart.
   const bytes = new Uint8Array(image.data.byteLength)
@@ -93,7 +97,7 @@ async function uploadSourceImage(baseURL: URL, image: ComfyUISourceImage, signal
   form.append('image', new Blob([bytes], { type: image.mediaType }), filename)
   const response = await fetch(endpoint(baseURL, 'upload/image'), {
     method: 'POST', redirect: 'error', signal,
-    headers: { accept: 'application/json' },
+    headers: { accept: 'application/json', ...extraHeaders },
     body: form,
   })
   const text = await readBoundedText(response, ERROR_LIMIT)
@@ -118,10 +122,10 @@ function uploadFilename(mediaType: ImageMediaType): string {
   return `dsh-image-gen-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${extension}`
 }
 
-async function submitWorkflow(baseURL: URL, workflow: Record<string, unknown>, signal: AbortSignal): Promise<string> {
+async function submitWorkflow(baseURL: URL, workflow: Record<string, unknown>, signal: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<string> {
   const response = await fetch(endpoint(baseURL, 'prompt'), {
     method: 'POST', redirect: 'error', signal,
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    headers: { 'content-type': 'application/json', accept: 'application/json', ...extraHeaders },
     body: JSON.stringify({ prompt: workflow }),
   })
   const text = await readBoundedText(response, ERROR_LIMIT)
@@ -133,11 +137,11 @@ async function submitWorkflow(baseURL: URL, workflow: Record<string, unknown>, s
   return payload.prompt_id
 }
 
-async function waitForOutput(baseURL: URL, promptId: string, signal: AbortSignal): Promise<ComfyUIImageOutput> {
+async function waitForOutput(baseURL: URL, promptId: string, signal: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<ComfyUIImageOutput> {
   for (;;) {
     signal.throwIfAborted()
     const response = await fetch(endpoint(baseURL, `history/${encodeURIComponent(promptId)}`), {
-      redirect: 'error', signal, headers: { accept: 'application/json' },
+      redirect: 'error', signal, headers: { accept: 'application/json', ...extraHeaders },
     })
     const text = await readBoundedText(response, MAX_HISTORY_BYTES)
     if (!response.ok) throw new Error(`ComfyUI history request failed (${response.status}): ${redactSecrets(text).slice(0, ERROR_LIMIT)}`)
@@ -182,12 +186,12 @@ function firstOutputImage(value: unknown): ComfyUIImageOutput | undefined {
   return undefined
 }
 
-async function downloadOutput(baseURL: URL, output: ComfyUIImageOutput, maxBytes: number, signal: AbortSignal): Promise<{ data: Uint8Array; mediaType: ImageMediaType }> {
+async function downloadOutput(baseURL: URL, output: ComfyUIImageOutput, maxBytes: number, signal: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<{ data: Uint8Array; mediaType: ImageMediaType }> {
   const url = endpoint(baseURL, 'view')
   url.searchParams.set('filename', output.filename)
   url.searchParams.set('subfolder', output.subfolder)
   url.searchParams.set('type', output.type)
-  const response = await fetch(url, { redirect: 'error', signal })
+  const response = await fetch(url, { redirect: 'error', signal, headers: { ...extraHeaders } })
   if (!response.ok) throw new Error(`ComfyUI image download failed (${response.status})`)
   const data = await readBoundedBytes(response, maxBytes)
   // Sniff first: self-hosted /view answers can carry a generic content-type (#61).

@@ -10,14 +10,16 @@ import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { DEFAULT_COMFYUI_BASE_URL, DEFAULT_COMFYUI_EXTRA_ARGS, DEFAULT_COMFYUI_PYTHON_EXE, DEFAULT_COMFYUI_SERVER_DIR, type ComfyUIServerStatus } from './shared.js'
+import { DEFAULT_COMFYUI_BASE_URL, DEFAULT_COMFYUI_EXTRA_ARGS, DEFAULT_COMFYUI_PYTHON_EXE, DEFAULT_COMFYUI_SERVER_DIR, comfyUIEndpointURL, isLocalComfyUIEndpoint, type ComfyUIServerStatus } from './shared.js'
 import { parseComfyUIExtraArgs } from './config.js'
+import { parseComfyUIHeaders } from './shared.js'
 
 export interface ComfyUIServerConfig {
   baseURL: string
   pythonExe: string
   serverDir: string
   extraArgs: string
+  headers: Record<string, string>
 }
 
 export function comfyUIServerConfigOf(config: {
@@ -25,12 +27,14 @@ export function comfyUIServerConfigOf(config: {
   comfyuiPythonExe?: string
   comfyuiServerDir?: string
   comfyuiExtraArgs?: string
+  comfyuiHeadersJson?: string
 }): ComfyUIServerConfig {
   return {
     baseURL: config.comfyuiBaseURL?.trim() || DEFAULT_COMFYUI_BASE_URL,
     pythonExe: config.comfyuiPythonExe?.trim() || DEFAULT_COMFYUI_PYTHON_EXE,
     serverDir: config.comfyuiServerDir?.trim() || DEFAULT_COMFYUI_SERVER_DIR,
     extraArgs: config.comfyuiExtraArgs ?? DEFAULT_COMFYUI_EXTRA_ARGS,
+    headers: parseComfyUIHeaders(config.comfyuiHeadersJson),
   }
 }
 
@@ -72,13 +76,16 @@ export class ComfyUIServerManager {
 
   async start(): Promise<ComfyUIServerStatus> {
     this.assertNotBusy()
+    if (!isLocalComfyUIEndpoint(this.deps().baseURL)) throw new Error('Start is available only for a ComfyUI server on this machine. The configured endpoint is remote — start it there instead.')
     this.busy = true
     try {
       if (await this.probe().then(probe => probe.up)) {
         return await this.status()
       }
       const { pythonExe, serverDir, extraArgs, baseURL } = this.deps()
+      if (pythonExe.trim().length === 0) throw new Error('Set the Python executable for your ComfyUI installation in Settings > Plugins > Image Generation, or start ComfyUI yourself.')
       if (!fs.existsSync(pythonExe)) throw new Error(`Python interpreter not found: ${pythonExe} — set the path in Settings > Plugins > Image Generation.`)
+      if (serverDir.trim().length === 0) throw new Error('Set the ComfyUI directory (the folder containing main.py) in Settings > Plugins > Image Generation, or start ComfyUI yourself.')
       if (!fs.existsSync(path.join(serverDir, 'main.py'))) throw new Error(`ComfyUI main.py not found under ${serverDir} — set the ComfyUI directory in Settings > Plugins > Image Generation.`)
       fs.mkdirSync(this.logDir, { recursive: true })
       const args = ['main.py', '--port', this.portOf(), ...parseComfyUIExtraArgs(extraArgs)]
@@ -107,6 +114,7 @@ export class ComfyUIServerManager {
 
   async stop(): Promise<ComfyUIServerStatus> {
     this.assertNotBusy()
+    if (!isLocalComfyUIEndpoint(this.deps().baseURL)) throw new Error('Stop is available only for a ComfyUI server on this machine. The configured endpoint is remote — stop it there instead.')
     this.busy = true
     try {
       const port = this.portOf()
@@ -142,7 +150,7 @@ export class ComfyUIServerManager {
   async status(): Promise<ComfyUIServerStatus> {
     const { baseURL } = this.deps()
     const probe = await this.probe()
-    const pids = await this.findComfyPids(this.portOf())
+    const pids = isLocalComfyUIEndpoint(baseURL) ? await this.findComfyPids(this.portOf()) : []
     return {
       up: probe.up,
       managed: this.childPid !== undefined && pids.includes(this.childPid),
@@ -174,10 +182,11 @@ export class ComfyUIServerManager {
   /** GET /system_stats: the ground truth for "is ComfyUI answering". */
   private async probe(): Promise<ServerProbe> {
     try {
-      const response = await fetch(new URL('/system_stats', this.deps().baseURL), {
+      const config = this.deps()
+      const response = await fetch(comfyUIEndpointURL(config.baseURL, 'system_stats'), {
         redirect: 'error',
         signal: AbortSignal.timeout(STATS_TIMEOUT_MS),
-        headers: { accept: 'application/json' },
+        headers: { accept: 'application/json', ...config.headers },
       })
       if (!response.ok) return { up: false }
       const stats = await response.json() as SystemStats

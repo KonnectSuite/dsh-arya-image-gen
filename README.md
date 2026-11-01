@@ -78,6 +78,24 @@ The settings card can start, stop, and restart the local ComfyUI process:
 
 The live status chip shows the ComfyUI version, GPU, and available VRAM when the server is running.
 
+### Remote ComfyUI
+
+A server on another machine works with nothing running locally:
+
+1. On the ComfyUI machine, listen beyond loopback and open the port:
+   ```bash
+   python main.py --listen 0.0.0.0 --port 8188
+   ```
+   Default ComfyUI binds `127.0.0.1` only, which is the usual reason a LAN address refuses connections.
+2. In **Settings → Arya Image Gen → Connection**, set the endpoint:
+   - LAN: `http://192.168.1.20:8188`
+   - Reverse proxy: `https://comfy.example.com/` or a subpath such as `https://example.com/comfy/` (API paths are resolved relative to it)
+3. If the proxy requires auth, put it in **Request headers**, for example
+   `{"Authorization": "Bearer <token>"}` or `{"Authorization": "Basic <base64>"}`. Headers are sent on every upload, prompt, history, and image request.
+4. Leave the local **Server** fields empty: for a remote endpoint the card only probes `/system_stats`, and Start / Stop / Restart are hidden because they act on the server's machine.
+
+Security: do not expose ComfyUI to the internet without authentication. Prefer a VPN (Tailscale/WireGuard), an SSH tunnel, or a reverse proxy that enforces auth and TLS. Self-signed certificates are rejected by the DSH host; use a trusted certificate or plain HTTP inside a VPN.
+
 ## Features
 
 - **Chat generation**: `generate_image`, `generate_images`, and `edit_image` tools with automatic workspace saving.

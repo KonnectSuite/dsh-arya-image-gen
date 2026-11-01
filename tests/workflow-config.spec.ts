@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Config, parseComfyUIExtraArgs, resolveProvider, selectComfyUIWorkflow } from '../src/config.js'
-import { activeComfyUIWorkflow, mergeComfyUIPrompt, resolveComfyUIWorkflows, uniqueComfyUIWorkflowName } from '../src/shared.js'
+import { activeComfyUIWorkflow, mergeComfyUIPrompt, pickStudioWorkflow, resolveComfyUIWorkflows, uniqueComfyUIWorkflowName } from '../src/shared.js'
 import { hasComfyUIImagePlaceholder, validateComfyUIWorkflowJson } from '../src/comfyui-workflow.js'
 
 const WORKFLOW = JSON.stringify({ 3: { class_type: 'KSampler', inputs: { text: '{{prompt}}', seed: '{{seed}}' } } })
@@ -109,5 +109,27 @@ describe('workflow helpers', () => {
     expect(() => validateComfyUIWorkflowJson('{}')).toThrow()
     expect(() => validateComfyUIWorkflowJson('not json')).toThrow()
     expect(() => validateComfyUIWorkflowJson(JSON.stringify({ 1: { inputs: { text: 'no placeholder' } } }))).toThrow(/must contain/)
+  })
+})
+
+describe('pickStudioWorkflow', () => {
+  const profile = (model, supportsEditing) => ({ provider: 'comfyui', label: 'ComfyUI', model, modelOptions: [], configured: true, supportsEditing, ratioOptions: [], qualityOptions: [], defaultRatio: 'auto', defaultQuality: 'auto' })
+  const profiles = [profile('paint', false), profile('edit', true)]
+
+  it('uses the remembered workflow when it fits the mode', () => {
+    expect(pickStudioWorkflow(profiles, 'generate', 'paint')?.model).toBe('paint')
+    expect(pickStudioWorkflow(profiles, 'edit', 'edit')?.model).toBe('edit')
+  })
+
+  it('falls back to a compatible workflow instead of the remembered one', () => {
+    expect(pickStudioWorkflow(profiles, 'edit', 'paint')?.model).toBe('edit')
+  })
+
+  it('ignores the .json suffix and letter case', () => {
+    expect(pickStudioWorkflow(profiles, 'generate', 'PAINT.json')?.model).toBe('paint')
+  })
+
+  it('returns undefined when the mode has no compatible workflow', () => {
+    expect(pickStudioWorkflow([profile('paint', false)], 'edit', 'paint')).toBeUndefined()
   })
 })

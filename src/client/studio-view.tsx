@@ -32,7 +32,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import { DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, PROVIDER_DEFAULT_QUALITY, isSubscriptionProvider, studioModelForMode, studioModelOptionsForMode, studioTargetKey, studioWatermarkCapability, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
+import { DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, PROVIDER_DEFAULT_QUALITY, isSubscriptionProvider, pickStudioWorkflow, studioModelForMode, studioModelOptionsForMode, studioTargetKey, studioWatermarkCapability, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
 import { deleteGalleryItem, getGalleryItems, saveGalleryItem, subscribeGallery, toggleFavoriteGalleryItem, type GalleryItem, saveFavoritePrompt, getFavoritePrompts, deleteFavoritePrompt, subscribeFavorites, addFavoriteFolder, getFavoriteFolders, deleteFavoriteFolder, moveFavoritePrompt, updateFavoritePrompt, type FavoritePrompt, type FavoriteFolder } from './gallery-store.js'
 import { evictAttachmentCache, fetchAttachmentBlob } from './image-cache.js'
 import { copyImageBlob, downloadBlobUrl, formatRelativeTime } from './browser-image-utils.js'
@@ -70,7 +70,7 @@ const COPY = {
     favPromptApplied: 'Prompt applied', favRefApplied: 'Reference added', favSaveFailed: 'Could not save; please retry',
     generate: 'Text to image', edit: 'Image to image', reference: 'Reference image', optional: 'optional', upload: 'Click or drop images here',
     uploadHint: 'JPG / PNG / WebP / GIF, up to 10MB (max 5)', prompt: 'Prompt', clear: 'Clear', promptPlaceholder: 'Describe the subject, composition, style, lighting, and exact text… (Ctrl+Enter to generate)',
-    provider: 'Provider', model: 'Model', workflow: 'Workflow', workflowCount: '{count} workflows', noWorkflows: 'No workflows', noWorkflowHint: 'Import an API-format workflow JSON in Settings > Plugins > Arya Image Gen to start generating.', workflowEditUnsupported: 'This workflow has no image input; pick an edit workflow for image-to-image.', ratio: 'Aspect ratio', quality: 'Quality', subscriptionParameterHint: 'The selected aspect ratio is automatically added to the generation prompt. ChatGPT still determines the final dimensions and quality; check the generated result.', subscriptionRatioMismatch: 'ChatGPT subscription returned a different aspect ratio. Check the actual dimensions.', start: 'Generate', generating: 'Generating…', cancelGenerate: 'Cancel',
+    provider: 'Provider', model: 'Model', workflow: 'Workflow', workflowCount: '{count} workflows', noWorkflows: 'No workflows', noWorkflowHint: 'Import an API-format workflow JSON in Settings > Plugins > Arya Image Gen to start generating.', workflowEditUnsupported: 'This workflow has no image input; pick an edit workflow for image-to-image.', noEditWorkflow: 'No edit-capable workflow is imported. Add an image input placeholder to a workflow, or import an edit workflow, in Settings > Plugins > Arya Image Gen.', autoWorkflowHint: 'Chosen automatically for the mode; open to override for this session.', ratio: 'Aspect ratio', quality: 'Quality', subscriptionParameterHint: 'The selected aspect ratio is automatically added to the generation prompt. ChatGPT still determines the final dimensions and quality; check the generated result.', subscriptionRatioMismatch: 'ChatGPT subscription returned a different aspect ratio. Check the actual dimensions.', start: 'Generate', generating: 'Generating…', cancelGenerate: 'Cancel',
     count: 'Number of images', countUnit: '{n}', partialSuccess: 'Generated {success} images, {failed} failed', generatingCount: 'Generating ({count} images)…',
     batchResult: 'Generated {count} images',
     singleModel: 'Single workflow', compareModels: 'Compare workflows', compareHint: 'Send the same prompt to multiple workflows', compareSelect: 'Choose workflows', compareSelected: '{count} workflows selected',
@@ -308,24 +308,18 @@ export const StudioView: FC<{
       setConfig(payload)
       if (silent) {
         // Silent refresh: keep the user's in-flight form state (prompt,
-        // parameters, selections). Only reconcile the selected provider's
-        // model when it changed on the host, and drop comparisons that are
-        // no longer signed in / configured.
-        const { provider: currentProvider, channel: currentChannel, model: currentModel } = formStateRef.current
-        const activeProfile = payload.providers.find(item => item.provider === currentProvider && item.channel === currentChannel)
-        if (activeProfile === undefined) {
-          const fallback = payload.providers.find(item => item.provider === payload.activeProvider && item.channel === payload.activeWorkflow) ?? payload.providers[0]
+        // parameters, selections). Only reconcile a selection whose workflow
+        // disappeared, and drop comparisons that are no longer configured.
+        const { model: currentModel } = formStateRef.current
+        if (!payload.providers.some(item => item.model === currentModel)) {
+          const fallback = payload.providers.find(item => item.model === payload.activeWorkflow) ?? payload.providers[0]
           if (fallback !== undefined) applyProvider(fallback)
-        } else if (!studioModelOptionsForMode(activeProfile, 'generate').some(option => option.value === currentModel)) {
-          setModel(activeProfile.model)
         }
         setComparisonProviderKeys(current => current.filter(selectedKey =>
           payload.providers.some(item => studioTargetKey(item.provider, item.channel) === selectedKey && item.configured)))
         return
       }
-      const initial = payload.providers.find(item => item.provider === payload.activeProvider && item.channel === payload.activeWorkflow)
-        ?? payload.providers.find(item => item.provider === payload.activeProvider)
-        ?? payload.providers[0]
+      const initial = payload.providers.find(item => item.model === payload.activeWorkflow) ?? payload.providers[0]
       if (initial !== undefined) {
         applyProvider(initial)
         setComparisonProviderKeys(initialComparisonProviders(payload.providers, initial.provider, initial.channel))
@@ -451,9 +445,15 @@ export const StudioView: FC<{
     }
   }, [])
 
-  const activeProfile = useMemo(() => config?.providers.find(item => item.provider === provider && item.channel === channel), [config, provider, channel])
-  const requestModel = mode === 'edit' && activeProfile?.editModel ? studioModelForMode(activeProfile, mode) : model
-  const configuredCount = config?.providers.filter(item => item.configured).length ?? 0
+  const allWorkflows = config?.providers ?? []
+  const editableWorkflowCount = allWorkflows.filter(item => item.supportsEditing).length
+  // The mode decides which workflow runs; the advanced picker only overrides it.
+  const activeProfile = useMemo(
+    () => pickStudioWorkflow(allWorkflows, mode, model || config?.activeWorkflow),
+    [config, allWorkflows, mode, model],
+  )
+  const requestModel = activeProfile?.model ?? model
+  const configuredCount = allWorkflows.filter(item => item.configured).length
   // Split badge counts: BYOK keys and subscription sign-ins stay separately
   // visible so a number is never a mixed bag of semantics.
   const apiConfiguredCount = config?.providers.filter(item => item.configured && !isSubscriptionProvider(item.provider)).length ?? 0
@@ -805,7 +805,10 @@ export const StudioView: FC<{
   }
 
   const submit = async () => {
-    if (isGenerating || activeProfile === undefined) return
+    if (isGenerating) return
+    if (allWorkflows.length === 0) return setError(t('noProvider'))
+    if (mode === 'edit' && editableWorkflowCount === 0) return setError(t('noEditWorkflow'))
+    if (activeProfile === undefined) return setError(t('selectConfigured'))
     if (prompt.trim().length === 0) return setError(t('needPrompt'))
     if (comparisonEnabled && comparisonTargets.length < 2) return setError(t('compareNeedTwo'))
     if (!comparisonEnabled && mode === 'edit' && !activeProfile.supportsEditing) return setError(t('workflowEditUnsupported'))
@@ -1573,7 +1576,7 @@ export const StudioView: FC<{
             </button>
           </div>
           <div className="dsh-ig-generator-form">
-            <div className="dsh-ig-mode-switch"><button type="button" className={mode === 'generate' ? 'is-active' : ''} onClick={() => setMode('generate')}><Sparkles size={15} />{t('generate')}</button><button type="button" className={mode === 'edit' ? 'is-active' : ''} onClick={() => setMode('edit')}><ImagePlus size={15} />{t('edit')}</button></div>
+            <div className="dsh-ig-mode-switch"><button type="button" className={mode === 'generate' ? 'is-active' : ''} onClick={() => setMode('generate')}><Sparkles size={15} />{t('generate')}</button><button type="button" className={mode === 'edit' ? 'is-active' : ''} disabled={editableWorkflowCount === 0} title={editableWorkflowCount === 0 ? t('noEditWorkflow') : undefined} onClick={() => setMode('edit')}><ImagePlus size={15} />{t('edit')}</button></div>
             {mode === 'edit' && (
               <div className="dsh-ig-field">
                 <div className="dsh-ig-field-label">
@@ -1705,14 +1708,17 @@ export const StudioView: FC<{
                 </div>
                 {comparisonWatermarkCapability.status === 'supported' ? <div className="dsh-ig-inline-note">Watermark applies only to workflows with confirmed support for this operation.</div> : null}
               </> : <>
-                <div className="dsh-ig-field-grid">
-                  <FieldSelect label={t('workflow')} value={model} onChange={setModel} options={config.providers.map(item => ({ value: item.model, label: item.model }))} />
-                </div>
+                <details className="dsh-ig-workflow-advanced">
+                  <summary>{t('workflow')}: {requestModel.length > 0 ? requestModel : t('noWorkflows')}</summary>
+                  <FieldSelect label={t('workflow')} value={requestModel} onChange={setModel} options={allWorkflows.map(item => ({ value: item.model, label: item.model }))} />
+                  <span className="dsh-ig-hint">{t('autoWorkflowHint')}</span>
+                </details>
                 {activeProfile !== undefined && mode === 'edit' && !activeProfile.supportsEditing ? <div className="dsh-ig-inline-note">{t('workflowEditUnsupported')}</div> : null}
                 <div className="dsh-ig-field"><label>{t('count')}</label><div className="dsh-ig-count-row">{[1, 2, 3, 4].map(option => <button key={option} type="button" className={`dsh-ig-count-pill ${count === option ? 'is-active' : ''}`} onClick={() => setCount(option)}>{t('countUnit', { n: String(option) })}</button>)}</div></div>
               </>}
             </>}
-            {configuredCount === 0 && config !== null && <div className="dsh-ig-inline-note">{t('noProvider')}</div>}
+            {config !== null && allWorkflows.length === 0 ? <div className="dsh-ig-inline-note">{t('noProvider')}</div> : null}
+            {config !== null && allWorkflows.length > 0 && mode === 'edit' && editableWorkflowCount === 0 ? <div className="dsh-ig-inline-note">{t('noEditWorkflow')}</div> : null}
             {error !== null && <div className="dsh-ig-form-error">{error}</div>}
             {isGenerating ? (
               <button type="button" className="dsh-ig-generate-button is-cancel" onClick={cancelGeneration}>
@@ -1720,7 +1726,7 @@ export const StudioView: FC<{
                 <span>{t('cancelGenerate')}</span>
               </button>
             ) : (
-              <button type="button" className="dsh-ig-generate-button" disabled={config === null} onClick={() => void submit()}>
+              <button type="button" className="dsh-ig-generate-button" disabled={config === null || allWorkflows.length === 0 || (mode === 'edit' && editableWorkflowCount === 0)} onClick={() => void submit()}>
                 <Sparkles size={17} />
                 <span>{comparisonEnabled ? `${t('compareStart')} (${comparisonTargets.length})` : `${t('start')}${count > 1 ? ` (${count})` : ''}`}</span>
               </button>

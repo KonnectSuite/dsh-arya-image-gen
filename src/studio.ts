@@ -59,6 +59,9 @@ export async function generateFromStudio(
   fallbackWorkspaceRoot?: string | undefined,
 ): Promise<StudioGenerateResponse> {
   const active = resolveProvider(config)
+  if (active.workflows.length === 0) {
+    throw new Error('No ComfyUI workflows are imported. Import an API-format workflow JSON in Settings > Plugins > Arya Image Gen.')
+  }
   const profile = describeStudio(config).providers.find(entry => entry.model === input.model)
   if (profile === undefined) throw new Error('The workflow list changed; refresh the workbench and pick a workflow again.')
   assertAllowed(profile, input)

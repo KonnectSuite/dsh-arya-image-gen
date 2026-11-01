@@ -228,6 +228,23 @@ export function studioWatermarkCapability(_profile?: StudioProviderProfile, _mod
 /** Upstream default quality value used by compatibility pickers. */
 export const PROVIDER_DEFAULT_QUALITY = 'auto'
 
+/**
+ * Choose the workflow a mode should use without asking the user. Image-to-image
+ * only considers edit-capable workflows; a remembered choice wins when it is
+ * compatible, otherwise the first compatible workflow applies.
+ */
+export function pickStudioWorkflow(
+  profiles: readonly StudioProviderProfile[],
+  mode: 'generate' | 'edit',
+  preferred?: string,
+): StudioProviderProfile | undefined {
+  const compatible = profiles.filter(profile => profile.configured && (mode === 'generate' || profile.supportsEditing))
+  if (compatible.length === 0) return undefined
+  const bare = (name: string | undefined): string => (name ?? '').replace(/\.json$/i, '').toLowerCase()
+  const wanted = bare(preferred)
+  return (wanted.length > 0 ? compatible.find(profile => bare(profile.model) === wanted) : undefined) ?? compatible[0]
+}
+
 /** Lightweight workspace description exposed to the client for scoping. */
 export interface StudioWorkspaceInfo {
   workspaceId: string

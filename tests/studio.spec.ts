@@ -68,6 +68,11 @@ describe('generateFromStudio', () => {
     expect(result.model).toBe('paint')
   })
 
+  it('rejects generation when no workflow is imported', async () => {
+    await expect(generateFromStudio(ctx, {}, { mode: 'generate', provider: 'comfyui', model: 'paint', prompt: 'x' }, new AbortController().signal))
+      .rejects.toThrow(/No ComfyUI workflows are imported/)
+  })
+
   it('rejects an unknown workflow', async () => {
     await expect(generateFromStudio(ctx, config, { mode: 'generate', provider: 'comfyui', model: 'nope', prompt: 'x' }, new AbortController().signal))
       .rejects.toThrow(/workflow list changed/i)

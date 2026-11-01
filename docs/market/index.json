@@ -1,0 +1,47 @@
+{
+  "format": 1,
+  "title": { "en": "AryaCode Plugins" },
+  "description": { "en": "Bundles published by AryaCode for DeepSeek Harness." },
+  "metadata": {
+    "categories": {
+      "image": { "title": { "en": "Image generation" } }
+    },
+    "labels": {
+      "arya": { "title": { "en": "AryaCode" } }
+    },
+    "sortKeys": {}
+  },
+  "plugins": [
+    {
+      "name": "dsh-arya-image-gen",
+      "title": { "en": "Arya Image Gen" },
+      "description": {
+        "en": "ComfyUI-native image generation for DeepSeek Harness: chat tools, infinite canvas, Studio workbench, workflow comparison, prompt library, and built-in ComfyUI server control."
+      },
+      "icon": "../assets/readme/hero-arya.webp",
+      "author": "AryaCode",
+      "homepage": "https://github.com/KonnectSuite/dsh-arya-image-gen#readme",
+      "repository": { "url": "https://github.com/KonnectSuite/dsh-arya-image-gen" },
+      "metadata": {
+        "category": "image",
+        "labels": ["arya"],
+        "keywords": [
+          "comfyui",
+          "image-generation",
+          "local-ai",
+          "workflow",
+          "deepseek-harness"
+        ]
+      },
+      "dist-tags": { "latest": "0.11.1" },
+      "versions": [
+        {
+          "version": "0.11.1",
+          "publishTimestamp": 1793513392,
+          "source": { "type": "npm" },
+          "engines": { "dsh": ">=0.1.7 <1" }
+        }
+      ]
+    }
+  ]
+}

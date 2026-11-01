@@ -46,6 +46,16 @@ It keeps the full creative loop: generate and edit images in chat, sketch and it
 
 <img src="docs/assets/readme/install-arya.webp" alt="Arya Image Gen installed and enabled in the DSH Plugins page" width="100%" />
 
+### Install from the market
+
+DSH ships no official plugin market, so the AryaCode market is a plugin index you add once:
+
+1. Open **Plugins** and enable **Custom plugin indexes** under **Experimental plugins**.
+2. In **Discover**, choose **Add index source** and enter:
+   `https://raw.githubusercontent.com/KonnectSuite/dsh-arya-image-gen/main/docs/market/index.json`
+3. Install **Arya Image Gen** from the listing.
+
+
 ## Workflows
 
 ComfyUI workflows are the "models" of this plugin. Each imported JSON becomes a selectable option in the chat pill, the Studio model picker, and the comparison view.

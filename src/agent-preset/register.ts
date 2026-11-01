@@ -41,6 +41,7 @@ export function registerAgentPreset(ctx: Context, definition: AgentPresetDefinit
     void Promise.resolve(presets.register(definition)).then(
       (disposer) => {
         release = disposer
+        ctx.logger?.info?.(`arya-image-preset: registered ${definition.id} (${definition.name})`)
       },
       (error: unknown) => {
         ctx.logger?.warn?.(`arya-image-preset: preset not registered: ${describe(error)}`)

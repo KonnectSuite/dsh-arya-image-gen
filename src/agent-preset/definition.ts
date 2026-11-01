@@ -30,8 +30,8 @@ export const ARYA_IMAGE_PRESET_NAME = 'Arya Image'
 /** One line under the name in the picker. */
 export const ARYA_IMAGE_PRESET_DESCRIPTION = 'Image work with only the core DSH tools and this plugin: the other installed bundles\' tools stay out of the prompt.'
 
-/** Sort position after the shipped presets and Arya Automation (5). */
-export const ARYA_IMAGE_PRESET_ORDER = 6
+/** Sort position right after Arya Standard (2), where the image work belongs. */
+export const ARYA_IMAGE_PRESET_ORDER = 2.5
 
 /** Row id of the tool-mask row inside the preset. */
 export const ARYA_IMAGE_TOOLSET_ROW_ID = 'arya-image-toolset'

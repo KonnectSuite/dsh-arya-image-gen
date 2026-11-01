@@ -106,6 +106,28 @@ pnpm test
 pnpm build
 ```
 
+## Publishing to the Arya market
+
+The AryaCode app reads its catalog from
+`https://raw.githubusercontent.com/KonnectSuite/dsh-arya-market/catalog/data/arya-plugins.json`.
+Add a release there and it appears in the market without an app update.
+
+`.github/workflows/arya-catalog.yml` automates the catalog write:
+
+- runs on a published GitHub release, on manual dispatch, and daily as a safety net;
+- downloads the npm tarball, computes its SHA-256, and upserts the entry
+  (`scripts/upsert-arya-catalog.mjs`), keeping older releases for version restore;
+- refuses to replace an existing version with different bytes.
+
+One-time setup: create a token with `contents: write` on `KonnectSuite/dsh-arya-market`
+and save it as the `ARYA_CATALOG_TOKEN` secret in this repository.
+
+Run it locally to preview an entry without writing:
+
+```bash
+node scripts/upsert-arya-catalog.mjs --market ../dsh-arya-market --version 0.11.1 --dry-run
+```
+
 ## FAQ
 
 **Why does generation fail with a connection error?**

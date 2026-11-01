@@ -1,0 +1,63 @@
+name: Arya market catalog
+
+# Adds the current release of this bundle to the official Arya market catalog
+# (data/arya-plugins.json on the `catalog` branch of KonnectSuite/dsh-arya-market).
+# The app reads that branch directly, so a listed release appears in the market
+# without an app update.
+#
+# Required secret: ARYA_CATALOG_TOKEN — a token with contents:write on
+# KonnectSuite/dsh-arya-market.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to list (defaults to package.json)
+        required: false
+        type: string
+  schedule:
+    # Daily safety net: lists package.json's version once npm has it.
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  upsert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bundle
+        uses: actions/checkout@v4
+
+      - name: Checkout Arya catalog
+        uses: actions/checkout@v4
+        with:
+          repository: KonnectSuite/dsh-arya-market
+          ref: catalog
+          path: market
+          token: ${{ secrets.ARYA_CATALOG_TOKEN }}
+
+      - name: Upsert catalog entry
+        env:
+          VERSION: ${{ inputs.version || github.event.release.tag_name || '' }}
+        run: |
+          set -euo pipefail
+          VERSION="${VERSION#v}"
+          node scripts/upsert-arya-catalog.mjs --market market ${VERSION:+--version "$VERSION"}
+
+      - name: Push catalog change
+        working-directory: market
+        env:
+          VERSION: ${{ inputs.version || github.event.release.tag_name || '' }}
+        run: |
+          if git diff --quiet -- data/arya-plugins.json; then
+            echo "catalog unchanged"
+            exit 0
+          fi
+          git config user.name "AryaCode Market"
+          git config user.email "market@aryacode.local"
+          git add data/arya-plugins.json
+          git commit -m "Catalog: dsh-arya-image-gen ${VERSION#v} (npm tarball)"
+          git push

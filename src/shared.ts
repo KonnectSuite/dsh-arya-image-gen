@@ -348,6 +348,14 @@ export function parseComfyUIHeaders(value: string | undefined): Record<string, s
   return headers
 }
 
+/**
+ * Escape double braces before text reaches a system-prompt context: AryaCode
+ * 0.2 fails a turn when it sees an unknown {{variable}}.
+ */
+export function safePromptText(value: string): string {
+  return value.replaceAll('{{', '{ {').replaceAll('}}', '} }')
+}
+
 /** Resolve a ComfyUI API path against the configured base URL, keeping any subpath. */
 export function comfyUIEndpointURL(baseURL: string, path: string): URL {
   const normalized = baseURL.trim().endsWith('/') ? baseURL.trim() : `${baseURL.trim()}/`

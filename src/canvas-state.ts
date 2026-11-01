@@ -10,7 +10,7 @@
  * own session-scratch semantics.
  */
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import type { CanvasNodeSummary, CanvasStatePush } from './shared.js'
+import { safePromptText, type CanvasNodeSummary, type CanvasStatePush } from './shared.js'
 
 /**
  * Decoded selection screenshot held in memory only. Nothing touches the
@@ -235,6 +235,7 @@ export class CanvasMirror {
       lines.push(screenshot)
       if (entry.selectionImage !== undefined && entry.selectionError !== undefined) lines.push(`The preview is available, but original synchronization failed: ${entry.selectionError}. Editing must not silently omit these references.`)
     }
-    return lines.join('\n')
+    // Canvas text is user content; double braces would be read as prompt variables.
+    return safePromptText(lines.join('\n'))
   }
 }

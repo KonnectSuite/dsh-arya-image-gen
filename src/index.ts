@@ -15,7 +15,7 @@ import { editComfyUIImage, generateComfyUIImage, type ComfyUIJobTimings } from '
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
-import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMPORT_ROUTE, INSPIRATION_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, type ComfyUIServerStatus } from './shared.js'
+import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMPORT_ROUTE, INSPIRATION_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, type ComfyUIServerStatus } from './shared.js'
 import { createInspirationRoute } from './inspiration-route.js'
 import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspiration.js'
 import { describeStudio, generateFromStudio } from './studio.js'
@@ -280,19 +280,29 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
 
   /** One ComfyUI generation, shared by generate_image and generate_images. */
-  const generateSingle = async (rawArgs: { prompt: string; workflow?: string }, exec: { agent?: { session: { header: { cwd?: string } } }; signal: AbortSignal }): Promise<GeneratedValue> => {
+  const generateSingle = async (rawArgs: { prompt: string; workflow?: string }, exec: { callId?: string; agent?: { session: { header: { cwd?: string } } }; signal: AbortSignal }): Promise<GeneratedValue> => {
     const args = cleanImageToolArgs(rawArgs)
     const active = resolveProvider(current())
     const workflow = selectComfyUIWorkflow(active, args.workflow)
-    const generated = await generateComfyUIImage({
-      baseURL: active.baseURL,
-      headers: active.headers,
-      workflowJson: workflow.json,
-      prompt: mergeComfyUIPrompt(workflow.presetPrompt, args.prompt),
-      timeoutMs: active.timeoutMs,
-      maxBytes: ctx.attachments.imageLimits.maxImageBytes,
-      signal: exec.signal,
-    })
+    const jobId = typeof exec.callId === 'string' && exec.callId.length > 0 ? progressJobIdForCall(exec.callId) : undefined
+    if (jobId !== undefined) comfyProgress.ensure(jobId, { baseURL: active.baseURL, headers: active.headers, workflowJson: workflow.json })
+    let generated: Awaited<ReturnType<typeof generateComfyUIImage>>
+    try {
+      generated = await generateComfyUIImage({
+        baseURL: active.baseURL,
+        headers: active.headers,
+        workflowJson: workflow.json,
+        prompt: mergeComfyUIPrompt(workflow.presetPrompt, args.prompt),
+        timeoutMs: active.timeoutMs,
+        maxBytes: ctx.attachments.imageLimits.maxImageBytes,
+        signal: exec.signal,
+        ...(jobId === undefined ? {} : { clientId: jobId }),
+      })
+    } catch (error) {
+      if (jobId !== undefined) comfyProgress.finish(jobId, 'error', error instanceof Error ? error.message : String(error))
+      throw error
+    }
+    if (jobId !== undefined) comfyProgress.finish(jobId, 'done')
     return saveGenerated(ctx, generated, 'comfyui', workflow.name, workflow.name, current(), exec, knownWorkspaceRoots)
   }
 
@@ -419,16 +429,26 @@ export function apply(ctx: Context, config: Config = {}): void {
       const sourceImage = sourceImages[0]
       if (sourceImage === undefined) throw new Error('edit_image requires a reference image')
       const workflow = selectComfyUIWorkflow(active, args.workflow)
-      const generated = await editComfyUIImage({
-        baseURL: active.baseURL,
-        headers: active.headers,
-        workflowJson: workflow.json,
-        prompt: mergeComfyUIPrompt(workflow.presetPrompt, args.prompt),
-        sourceImage: { data: sourceImage.data, mediaType: sourceImage.mediaType },
-        timeoutMs: active.timeoutMs,
-        maxBytes: ctx.attachments.imageLimits.maxImageBytes,
-        signal: exec.signal,
-      })
+      const jobId = typeof exec.callId === 'string' && exec.callId.length > 0 ? progressJobIdForCall(exec.callId) : undefined
+      if (jobId !== undefined) comfyProgress.ensure(jobId, { baseURL: active.baseURL, headers: active.headers, workflowJson: workflow.json })
+      let generated: Awaited<ReturnType<typeof editComfyUIImage>>
+      try {
+        generated = await editComfyUIImage({
+          baseURL: active.baseURL,
+          headers: active.headers,
+          workflowJson: workflow.json,
+          prompt: mergeComfyUIPrompt(workflow.presetPrompt, args.prompt),
+          sourceImage: { data: sourceImage.data, mediaType: sourceImage.mediaType },
+          timeoutMs: active.timeoutMs,
+          maxBytes: ctx.attachments.imageLimits.maxImageBytes,
+          signal: exec.signal,
+          ...(jobId === undefined ? {} : { clientId: jobId }),
+        })
+      } catch (error) {
+        if (jobId !== undefined) comfyProgress.finish(jobId, 'error', error instanceof Error ? error.message : String(error))
+        throw error
+      }
+      if (jobId !== undefined) comfyProgress.finish(jobId, 'done')
       return saveGenerated(ctx, generated, 'comfyui', workflow.name, workflow.name, current(), exec, knownWorkspaceRoots)
     },
     presentResult: (_args, result) => imagePresentation(result),

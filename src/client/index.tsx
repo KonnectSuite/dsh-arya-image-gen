@@ -18,7 +18,9 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
+import type { ComfyUIJobSnapshot } from '../comfyui-progress.js'
 import {
+  COMFYUI_PROGRESS_ROUTE,
   COMFYUI_SERVER_ROUTE,
   DEFAULT_COMFYUI_BASE_URL,
   DEFAULT_COMFYUI_EXTRA_ARGS,
@@ -33,6 +35,7 @@ import {
   activeComfyUIWorkflow,
   isLocalComfyUIEndpoint,
   parseComfyUIHeaders,
+  progressJobIdForCall,
   resolveComfyUIWorkflows,
   uniqueComfyUIWorkflowName,
   type ComfyUIServerStatus,
@@ -1266,8 +1269,61 @@ function useSettingsSnapshot(scope: SettingsScope<ImageSettings>) {
   return snapshot
 }
 
+/** Poll the host job snapshot for one running tool call. */
+function useJobSnapshot(callId: string): ComfyUIJobSnapshot | undefined {
+  const [snapshot, setSnapshot] = useState<ComfyUIJobSnapshot | undefined>(undefined)
+  useEffect(() => {
+    let cancelled = false
+    const jobId = progressJobIdForCall(callId)
+    const tick = async (): Promise<void> => {
+      try {
+        const response = await fetch(`${COMFYUI_PROGRESS_ROUTE}/${jobId}?format=json`, { credentials: 'same-origin' })
+        if (!response.ok) return
+        const payload = await response.json() as { job?: ComfyUIJobSnapshot }
+        if (!cancelled && payload.job !== undefined) setSnapshot(payload.job)
+      } catch { /* progress is advisory; the tool result still arrives */ }
+    }
+    void tick()
+    const timer = window.setInterval(() => { void tick() }, 700)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [callId])
+  return snapshot
+}
+
+/** Inline progress surfaced in the tool card while ComfyUI is still working. */
+function LiveGenerationCard(props: ImageCardProps) {
+  const args = ((): { prompt?: string; workflow?: string } => {
+    try { return JSON.parse((props.block as { argsRaw?: string }).argsRaw ?? '{}') as { prompt?: string; workflow?: string } } catch { return {} }
+  })()
+  const snapshot = useJobSnapshot(props.callId)
+  const percent = snapshot !== undefined && snapshot.max > 0
+    ? Math.min(100, Math.round((snapshot.value / snapshot.max) * 100))
+    : snapshot?.phase === 'running' ? 100 : 0
+  const elapsed = ((snapshot?.elapsedMs ?? 0) / 1000).toFixed(1)
+  const phaseLabel = snapshot?.phase === 'running' ? 'Generating' : 'Queued'
+  const detail = snapshot?.nodeLabel ?? (typeof args.prompt === 'string' && args.prompt.length > 0 ? args.prompt : 'Preparing workflow…')
+  return (
+    <div className="dsh-ig-progress" role="status" aria-live="polite">
+      <div className="dsh-ig-progress-head">
+        <span>{phaseLabel}</span>
+        <span>{elapsed}s</span>
+      </div>
+      <div className="dsh-ig-progress-track">
+        <div className="dsh-ig-progress-fill" style={{ width: `${percent}%` }} />
+      </div>
+      <span className="dsh-ig-progress-node">{detail}</span>
+      <span className="dsh-ig-hint">{typeof args.workflow === 'string' && args.workflow.length > 0 ? args.workflow : 'Workflow chosen in settings'}</span>
+      {snapshot !== undefined && snapshot.previewVersion > 0 ? (
+        <img className="dsh-ig-progress-preview" alt="Live ComfyUI preview" src={`${COMFYUI_PROGRESS_ROUTE}/${snapshot.jobId}/preview?v=${snapshot.previewVersion}`} />
+      ) : null}
+    </div>
+  )
+}
+
 /** Keep the legacy Tool row for old DSH and hand modern results to the independent Chat node. */
 export function GeneratedImageCard(props: ImageCardProps) {
+  // While the call is still running, the card itself becomes the live progress view.
+  if (props.phase !== 'result') return <LiveGenerationCard {...props} />
   const result = imageResultFromBlock(props.block)
   if (props.promoted && result !== undefined) return <PromotedResultNotice locale={props.locale} />
   return <ImageResultCard result={result} locale={props.locale} sessionId={(props as any).sessionId} />

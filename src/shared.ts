@@ -15,6 +15,12 @@ export const INSPIRATION_ROUTE = '/plugins/dsh-image-gen/inspiration'
 export const SAVE_WORKSPACE_ROUTE = '/plugins/dsh-image-gen/save-workspace'
 /** Same-origin route that starts, stops, restarts, and probes the local ComfyUI server. */
 export const COMFYUI_SERVER_ROUTE = '/plugins/dsh-image-gen/comfyui-server'
+/** Deterministic progress job id for one chat tool call. */
+export function progressJobIdForCall(callId: string): string {
+  const safe = callId.replace(/[^A-Za-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  return (safe.length >= 8 ? safe.slice(0, 72) : `job-${safe}`).slice(0, 72)
+}
+
 /** Prefix for live job snapshots, previews, and cancellation. */
 export const COMFYUI_PROGRESS_ROUTE = '/plugins/dsh-image-gen/progress'
 /** Non-secret settings capability probe, available even when the host cannot serve a form. */

@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { CanvasMirror } from '../src/canvas-state.js'
 import { imageToolContext } from '../src/image-tool-context.js'
-import { safePromptText } from '../src/shared.js'
+import { progressJobIdForCall, safePromptText } from '../src/shared.js'
+
+describe('progress job ids', () => {
+  it('maps a tool call id to a route-safe job id', () => {
+    expect(progressJobIdForCall('call:abc/def')).toBe('call-abc-def')
+    expect(progressJobIdForCall('x')).toBe('job-x')
+    expect(progressJobIdForCall('a'.repeat(200)).length).toBeLessThanOrEqual(72)
+  })
+})
 
 const workflows = [{ name: 'paint', json: JSON.stringify({ 1: { inputs: { text: '{{prompt}}' } } }) }]
 

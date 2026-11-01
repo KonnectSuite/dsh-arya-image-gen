@@ -15,7 +15,7 @@ import { editComfyUIImage, generateComfyUIImage, type ComfyUIJobTimings } from '
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
-import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, RENDER_HEALTH_ROUTE, RENDER_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, type ComfyUIGenerationParams, type ComfyUIServerStatus } from './shared.js'
+import { CANVAS_STATE_ROUTE, CHECK_WORKFLOWS_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, RENDER_HEALTH_ROUTE, RENDER_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, resolveComfyUIWorkflows, type ComfyUIGenerationParams, type ComfyUIServerStatus } from './shared.js'
 import { createInspirationRoute } from './inspiration-route.js'
 import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspiration.js'
 import { describeStudio, generateFromStudio } from './studio.js'
@@ -32,6 +32,7 @@ import { registerRenderTools } from './render-tools.js'
 import { RENDER_LIMITS } from './render/render.js'
 import { describeRenderer, renderFromStudio, rendererHealth } from './render-service.js'
 import { serveRender } from './render-route.js'
+import { checkWorkflowsAgainstInstall } from './validate-workflows.js'
 import { buildAgentPresetDefinition } from './agent-preset/definition.js'
 import { registerAgentPreset } from './agent-preset/register.js'
 
@@ -196,6 +197,20 @@ export function apply(ctx: Context, config: Config = {}): void {
         }, pathname.slice(COMFYUI_PROGRESS_ROUTE.length))
       },
     }), 'dsh-image-gen: comfyui progress route')
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact', path: CHECK_WORKFLOWS_ROUTE,
+      handler: async (req, res) => {
+        try {
+          const active = resolveProvider(current())
+          const checks = await checkWorkflowsAgainstInstall(resolveComfyUIWorkflows(current()), active.baseURL, active.headers)
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ checks }))
+        } catch (error) {
+          res.writeHead(502, { 'content-type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'workflow check failed' }))
+        }
+      },
+    }), 'dsh-image-gen: workflow check route')
     webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact', path: RENDER_HEALTH_ROUTE,
       handler: async (req, res) => {

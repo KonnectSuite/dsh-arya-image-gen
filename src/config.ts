@@ -1,5 +1,6 @@
 /** User-facing configuration for the local ComfyUI image provider. */
 import z from '@deepseek-ai/schemastery'
+import { SHIPPED_WORKFLOWS } from './generated/default-workflows.js'
 import {
   parseComfyUIHeaders,
   DEFAULT_COMFYUI_BASE_URL,
@@ -106,10 +107,15 @@ function volatile<T extends z>(schema: T): T {
  * `volatile`); the `z<Config>` annotation keeps the plain output type for the
  * rest of the codebase because the wrapping is unwrapped at the entry.
  */
+/** Workflows a fresh configuration starts with: the shipped pack. */
+export const DEFAULT_WORKFLOWS = SHIPPED_WORKFLOWS.map(entry => ({ name: entry.name, json: entry.json }))
+
 export const Config = z.object({
   provider: volatile(z.union(IMAGE_PROVIDERS).default('comfyui')),
   comfyuiBaseURL: volatile(z.string().default(DEFAULT_COMFYUI_BASE_URL)),
-  comfyuiWorkflows: volatile(z.array(z.object({ name: z.string(), json: z.string(), presetPrompt: z.string().default('') })).default([])),
+  // Prefilled with the shipped pack: a fresh install can generate without
+  // importing anything, and the settings card lists them like any other entry.
+  comfyuiWorkflows: volatile(z.array(z.object({ name: z.string(), json: z.string(), presetPrompt: z.string().default(''), role: z.union([z.const('text-to-image'), z.const('image-to-image')]) })).default(DEFAULT_WORKFLOWS)),
   comfyuiActiveWorkflow: volatile(z.string().default('')),
   comfyuiActiveTextWorkflow: volatile(z.string().default('')),
   comfyuiActiveEditWorkflow: volatile(z.string().default('')),

@@ -38,6 +38,8 @@ export const CANVAS_ASSET_ROUTE = '/plugins/dsh-image-gen/canvas-asset'
 export const RENDER_ROUTE = '/plugins/dsh-image-gen/render'
 /** Renderer capability probe, safe before any render runs. */
 export const RENDER_HEALTH_ROUTE = '/plugins/dsh-image-gen/render-health'
+/** Pre-flight the configured workflows against the running ComfyUI. */
+export const CHECK_WORKFLOWS_ROUTE = '/plugins/dsh-image-gen/check-workflows'
 
 /** One template the workbench and the model can render. */
 export interface RenderTemplateInfo {

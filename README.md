@@ -58,7 +58,7 @@ DSH ships no official plugin market, so the AryaCode market is a plugin index yo
 
 ## Workflows
 
-ComfyUI workflows are the "models" of this plugin. Each imported JSON becomes a selectable option in the Studio model picker, the comparison view, and the chat tools.
+ComfyUI workflows are the "models" of this plugin. A fresh install already arrives with the four shipped workflows configured (text-to-image with adjustable size, cutout, edit, background removal), so there is nothing to import before the first image. Each imported JSON becomes a selectable option in the Studio model picker, the comparison view, and the chat tools.
 
 Workflows are grouped by role: **Text to image** and **Image to image**, detected from the JSON and overridable per workflow. Each group remembers its own active workflow, so `edit_image` uses the edit graph without you switching anything.
 
@@ -71,6 +71,8 @@ Workflows are grouped by role: **Text to image** and **Image to image**, detecte
 Export from ComfyUI with **Save (API Format)**. UI-format workflows are not supported.
 
 Four ready-made API workflows ship with the plugin — Qwen Image 2.1 create (with adjustable size), cutout, edit and background removal — in [`docs/workflows/`](docs/workflows/) or as [`arya-qwen-image-pack.zip`](docs/workflows/arya-qwen-image-pack.zip). Import them as-is.
+
+**Check against ComfyUI** in the Workflows card pre-flights every configured workflow against the running server and reports missing node packs or model files by name.
 
 Placeholders, roles, size presets, the ready-made pack and the one-workflow-per-size conversion are documented in [docs/comfyui-workflows.md](docs/comfyui-workflows.md).
 

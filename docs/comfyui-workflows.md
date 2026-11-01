@@ -4,6 +4,19 @@ The Workflows card groups imports by what they do, and a workflow can expose
 the settings a call is allowed to change. Both exist for one reason: you should
 not need a separate JSON per size.
 
+## Already configured
+
+A fresh configuration starts with these four workflows already in place, named
+`Qwen Image 2.1 - ...`; there is no import step. They live in this repository at
+[`docs/workflows/`](workflows/) and, for a local ComfyUI install, the same files
+are copied to `<ComfyUI>/user/default/workflows/Arya Image (Plugin API)/` so you
+can open them in the ComfyUI editor too.
+
+Removing one in the settings card removes it from *your* configuration only —
+uninstall and reinstall brings the shipped set back. Use **Check against
+ComfyUI** to confirm the server knows every node class and model file they
+reference; it reports missing names rather than failing at generation time.
+
 ## Ready-made pack
 
 Four API-format workflows ship in [`workflows/`](workflows/) and as

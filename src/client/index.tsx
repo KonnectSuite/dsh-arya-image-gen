@@ -31,6 +31,7 @@ import {
   IMAGE_GENERATION_NAMESPACE,
   IMAGE_ROUTE,
   RENDER_HEALTH_ROUTE,
+  CHECK_WORKFLOWS_ROUTE,
   MAX_COMFYUI_WORKFLOW_BYTES,
   STUDIO_ROUTE,
   activeComfyUIWorkflow,
@@ -1009,6 +1010,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
   const [activeWorkflow, setActiveWorkflow] = useState('')
   const [editActiveWorkflow, setEditActiveWorkflow] = useState('')
   const [importSummary, setImportSummary] = useState<{ name: string; role: ComfyUIWorkflowRole; chips: string[]; warning?: string } | null>(null)
+  const [checking, setChecking] = useState(false)
   const [workflows, setWorkflows] = useState<ComfyUIWorkflowEntry[]>([])
   const [status, setStatus] = useState<ComfyUIServerStatus | null>(null)
   const [serverBusy, setServerBusy] = useState(false)
@@ -1177,6 +1179,34 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     }
   }
 
+  /** Pre-flight every workflow against the running ComfyUI. */
+  const checkWorkflows = async (): Promise<void> => {
+    setChecking(true)
+    setMessage('')
+    try {
+      const response = await fetch(CHECK_WORKFLOWS_ROUTE, { credentials: 'same-origin' })
+      const payload = await response.json() as { checks?: { name: string; ok: boolean; missingClasses: string[]; missingModels: string[]; error?: string }[]; error?: string }
+      if (!response.ok || payload.checks === undefined) throw new Error(payload.error ?? `HTTP ${String(response.status)}`)
+      const broken = payload.checks.filter(check => !check.ok)
+      if (broken.length === 0) {
+        setMessage(`All ${String(payload.checks.length)} workflows resolve against ComfyUI.`)
+        setMessageIsError(false)
+      } else {
+        setMessage(broken.map(check => `${check.name}: ${[
+          check.error ?? '',
+          check.missingClasses.length > 0 ? `missing nodes ${check.missingClasses.join(', ')}` : '',
+          check.missingModels.length > 0 ? `missing models ${check.missingModels.join(', ')}` : '',
+        ].filter(Boolean).join('; ')}`).join(' · '))
+        setMessageIsError(true)
+      }
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause))
+      setMessageIsError(true)
+    } finally {
+      setChecking(false)
+    }
+  }
+
   /** Persist the workflow list and keep the active selection valid. */
   const persistWorkflows = (next: ComfyUIWorkflowEntry[]): void => {
     setWorkflows(next)
@@ -1307,6 +1337,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
           <div className="dsh-ig-workflow-actions">
             <button type="button" className="dsh-ig-btn-secondary" onClick={() => { fileRef.current?.click() }} disabled={disabled || importing}>{importing ? 'Importing…' : 'Import workflow JSON'}</button>
             <input ref={fileRef} type="file" accept="application/json,.json" onChange={event => { void importWorkflow(event) }} hidden />
+            <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void checkWorkflows() }} disabled={checking || workflows.length === 0}>{checking ? 'Checking…' : 'Check against ComfyUI'}</button>
           </div>
           <span className="dsh-ig-hint">Export an API-format JSON from ComfyUI and put {"{{prompt}}"} in its prompt input; {"{{seed}}"} is available for a random seed. For image editing put {"{{image}}"} (exactly once) in the LoadImage image input. Add {"{{width}}"}, {"{{height}}"}, {"{{steps}}"} or {"{{cfg}}"} to numeric inputs to let calls adjust them.</span>
 

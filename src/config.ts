@@ -56,6 +56,11 @@ export interface Config {
   comfyuiExtraArgs?: string
   /** Launch the ComfyUI server automatically when the plugin boots and it is down. */
   comfyuiAutoStart?: boolean
+  /**
+   * Register the Arya Image agent preset: core DSH tools plus this plugin's
+   * tools, with the other installed bundles' tools masked out to save context.
+   */
+  agentPreset?: boolean
   /** Also write every generated image as a file under the session workspace. */
   saveToWorkspace?: boolean
   /** Workspace subfolder for generated images; empty means the workspace root. */
@@ -94,6 +99,7 @@ export const Config = z.object({
   comfyuiServerDir: volatile(z.string().default(DEFAULT_COMFYUI_SERVER_DIR)),
   comfyuiExtraArgs: volatile(z.string().default(DEFAULT_COMFYUI_EXTRA_ARGS)),
   comfyuiAutoStart: volatile(z.boolean().default(false)),
+  agentPreset: volatile(z.boolean().default(true)),
   saveToWorkspace: volatile(z.boolean().default(true)),
   workspaceFolder: volatile(z.string().default(DEFAULT_WORKSPACE_FOLDER)),
   showProviderPill: volatile(z.boolean().default(false)),

@@ -12,6 +12,9 @@ const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 assert.equal(manifest.peerDependencies['@deepseek-ai/schemastery'], '>=3.18.4 <4')
 assert.ok(existsSync(join(root, 'lib', 'index.js')), 'Run the build before test:package')
 assert.ok(existsSync(join(root, 'lib', 'client.js')), 'Run the build before test:package')
+// The Arya Image preset mounts this subpath as a row; a missing build output
+// would surface only as a failed session create.
+assert.ok(existsSync(join(root, 'lib', 'agent-toolset.js')), 'The agent-toolset subpath did not build')
 const npm = [
   join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
   join(dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),

@@ -14,6 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { CanvasMirror, CanvasMirrorEntry, CanvasSelectionImage } from './canvas-state.js'
 import { findReferenceImages } from './reference-image.js'
 import type { ReferenceImageAgent, ResolvedReferenceImage } from './reference-image.js'
+import { IMAGE_TOOL_NAMES } from './shared.js'
 
 /** The small attachment surface the canvas-selection resolver needs. */
 export type CanvasSelectionImageStore = {
@@ -34,7 +35,7 @@ export interface CanvasToolsDeps {
 /** Register the canvas tools on a context that owns a canvas mirror. */
 export function registerCanvasTools(ctx: Context, mirror: CanvasMirror, deps: CanvasToolsDeps): void {
   ctx.tools.register(defineTool({
-    name: 'canvas_state',
+    name: IMAGE_TOOL_NAMES.canvasState,
     description: 'Inspect the current state of the image-gen workbench infinite canvas: what shapes are on it (generated images, hand-drawn strokes, text notes) and what is currently selected. Use whenever the user refers to "the canvas", something they drew or placed there, or a selection, and before view_canvas or edit_image with source=canvas_selection.',
     parameters: {},
     output: {
@@ -62,7 +63,7 @@ export function registerCanvasTools(ctx: Context, mirror: CanvasMirror, deps: Ca
   }))
 
   ctx.tools.register(defineTool({
-    name: 'view_canvas',
+    name: IMAGE_TOOL_NAMES.viewCanvas,
     description: 'View the current selection on the image-gen workbench infinite canvas as an image (a screenshot the canvas pushed for its selection: hand-drawn sketches, annotated images, or any selected shapes). Call it after canvas_state confirms a selection exists. When nothing is selected, ask the user to select the shapes first. The image becomes part of the conversation, so you can reason about it directly.',
     parameters: {},
     output: {

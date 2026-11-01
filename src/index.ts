@@ -15,7 +15,7 @@ import { editComfyUIImage, generateComfyUIImage, type ComfyUIJobTimings } from '
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
-import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMPORT_ROUTE, INSPIRATION_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, type ComfyUIServerStatus } from './shared.js'
+import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, type ComfyUIServerStatus } from './shared.js'
 import { createInspirationRoute } from './inspiration-route.js'
 import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspiration.js'
 import { describeStudio, generateFromStudio } from './studio.js'
@@ -27,6 +27,8 @@ import { describeSettingsHealth, serveSettingsHealth } from './settings-health.j
 import { SETTINGS_HEALTH_ROUTE, type SettingsHealth } from './shared.js'
 import { deleteImageFromWorkspace, getDshWorkspaceRoots, getDshWorkspacesFull, saveImageToWorkspace } from './workspace-save.js'
 import { imageToolContext } from './image-tool-context.js'
+import { buildAgentPresetDefinition } from './agent-preset/definition.js'
+import { registerAgentPreset } from './agent-preset/register.js'
 
 export { Config } from './config.js'
 export { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta } from './image-route.js'
@@ -116,6 +118,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     setSource: source => { current = () => plainConfig(source()) },
     onChange: () => {},
   })
+  // A host surface, not a session one: the preset is registered once at boot
+  // and withdrawn with this plugin's fiber. A composition without a preset
+  // registry (headless, SDK) simply never sees it.
+  if (current().agentPreset !== false) {
+    registerAgentPreset(ctx, buildAgentPresetDefinition({ platform: process.platform }))
+  }
   // Every HTTP surface needs webServer, which only the web-app bundle (web,
   // desktop) provides; the headless, acp and sdk profiles have none. Mount the
   // routes when it is present so the tools below still activate without it.
@@ -307,7 +315,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
 
   ctx.tools.register(defineTool({
-    name: 'generate_image',
+    name: IMAGE_TOOL_NAMES.generateImage,
     description: 'Generate a new image with the configured local ComfyUI workflow. Use when the user asks to create or draw a new image; use edit_image instead when they want to change an existing image. Give a complete visual prompt including subject, composition, style, lighting, and any exact text that should appear. The workflow defines the output size; the optional workflow argument picks a configured workflow for this call only when the user asks for a specific one. A successful image is attached directly to the conversation and may also be saved under the session workspace. Do not call read, glob, or other tools to locate or verify the image.',
     parameters: {
       prompt: { type: 'string', required: true, description: 'Complete description of the image to generate.' },
@@ -321,7 +329,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'generate_images',
+    name: IMAGE_TOOL_NAMES.generateImages,
     description: 'Generate several images in one call, one per prompt, in order. Use for batches, variations, or illustration sets; prefer generate_image for a single image. Every successful image is attached to the conversation and may be saved under the session workspace. Items generate sequentially; a failed item is reported in the failures list and does not abort the rest. The optional workflow argument applies to every item.',
     parameters: {
       prompts: { type: 'array', items: { type: 'string' }, required: true, description: 'Ordered complete prompts; one image is generated per entry (1-10).' },
@@ -380,7 +388,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'edit_image',
+    name: IMAGE_TOOL_NAMES.editImage,
     description: 'Edit, combine, or restyle an existing image with the configured local ComfyUI workflow. Images attached inline to the latest human message are already readable DSH attachments even when no workspace file exists. In that case, call edit_image immediately with prompt only; NEVER call read_image, glob, or shell to locate them, and NEVER invent @ paths. All inline images will be used in upload order. For specific older conversation images use source_attachment_id or source_attachment_ids; both canonical sha256: IDs and full bare SHA-256 digests are accepted. For files the user explicitly names in the workspace use source_path or source_paths. For what the user selected or drew on the image-gen workbench canvas (for example a hand-drawn sketch) use source=canvas_selection; canvas_state can verify a selection exists first. Provide exactly one selector field. Without a selector, images from the latest human message take priority; only when that message has no images does editing fall back to the newest conversation image. ComfyUI edits run one source image per call against a workflow with an image input. When the user wants a person, character, or object from the reference images kept as the same identity, write short hard identity-preservation instructions (use the same subject from the references; do not redesign it or synthesize a similar-looking replacement; change only scene, clothing, pose, lighting, style, or composition) instead of long generic appearance descriptions, which make the model replace the subject with a synthesized lookalike.',
     parameters: {
       prompt: { type: 'string', required: true, description: 'Describe the changes to make while preserving everything else that should remain.' },
@@ -455,7 +463,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'find_inspiration',
+    name: IMAGE_TOOL_NAMES.findInspiration,
     description: 'Search the bundled inspiration libraries for ready-made image prompts: the handdraw-style cookbook (style, layout, and theme-color sections) plus the awesome-gpt-image-2 example set. Use before generate_image whenever the user wants a specific art style, layout template, or theme color, mentions a numbered style like "style #123", or asks for reference/example prompts. Each hit carries a full prompt reusable with generate_image; handdraw style prompts contain a TOPIC placeholder to replace with the user\'s subject, and may be combined with a layout and a theme-color prompt.',
     parameters: {
       query: { type: 'string', description: 'Keyword matched against titles, prompts, categories, and style/scene tags. Omit to sample what a library offers.' },

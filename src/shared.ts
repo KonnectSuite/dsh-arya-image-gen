@@ -35,6 +35,50 @@ export const CANVAS_STATE_ROUTE = '/plugins/dsh-image-gen/canvas-state'
 /** Upload a selected canvas original to the host attachment store. */
 export const CANVAS_ASSET_ROUTE = '/plugins/dsh-image-gen/canvas-asset'
 
+/**
+ * Model-facing tool names this Bundle registers.
+ *
+ * Single source of truth: the registrations below use these values, and the
+ * Arya Image agent preset whitelists exactly this set out of the host-wide
+ * tool registry, so the two can never drift.
+ */
+export const IMAGE_TOOL_NAMES = {
+  generateImage: 'generate_image',
+  generateImages: 'generate_images',
+  editImage: 'edit_image',
+  findInspiration: 'find_inspiration',
+  canvasState: 'canvas_state',
+  viewCanvas: 'view_canvas',
+} as const
+
+/** Every image tool name, in registration order. */
+export const IMAGE_TOOL_NAME_LIST: readonly string[] = Object.values(IMAGE_TOOL_NAMES)
+
+/**
+ * Core DSH tools an Arya Image session keeps from the host bundles.
+ *
+ * Shell is platform-dependent because the base bundle mounts `pwsh` on Windows
+ * and `bash` everywhere else. Anything not named here (web, skills, goals,
+ * subagents, plan mode, and every other installed bundle's tools) is masked.
+ *
+ * @param platform - `process.platform` value of the host.
+ * @returns the global tool names the preset keeps.
+ */
+export function coreToolNames(platform: string): readonly string[] {
+  return [
+    'read',
+    'write',
+    'edit',
+    'glob',
+    'grep',
+    platform === 'win32' ? 'pwsh' : 'bash',
+    'job_list',
+    'job_output',
+    'job_kill',
+    'todo_write',
+  ]
+}
+
 /** Coarse model-facing kind of one shape on the workbench infinite canvas. */
 export type CanvasNodeKind = 'image' | 'draw' | 'text' | 'note' | 'geo' | 'arrow' | 'frame' | 'other'
 

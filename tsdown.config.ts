@@ -10,7 +10,12 @@ const CLIENT_EXTERNALS = [
 
 const host: UserConfig = {
   name: 'dsh-arya-image-gen',
-  entry: ['lib/types/index.js'],
+  // Two host entry points: the bundle itself, and the one module an agent
+  // preset can mount as a row (`dsh-arya-image-gen/agent-toolset`).
+  entry: {
+    index: 'lib/types/index.js',
+    'agent-toolset': 'lib/types/agent-preset/toolset.js',
+  },
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

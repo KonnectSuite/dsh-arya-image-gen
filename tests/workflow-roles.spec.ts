@@ -29,7 +29,7 @@ describe('workflow capabilities', () => {
   it('detects adjustable parameters', () => {
     const capabilities = describeWorkflowJson(T2I)
     expect(capabilities.role).toBe('text-to-image')
-    expect(capabilities.placeholders).toEqual({ width: true, height: true, steps: true, cfg: true })
+    expect(capabilities.placeholders).toMatchObject({ width: true, height: true, steps: true, cfg: true })
   })
 
   it('reports the baked size when nothing is adjustable', () => {
@@ -87,6 +87,19 @@ describe('numeric placeholders', () => {
       5: { inputs: { width: 'size {{width}}' } },
     })
     expect(() => validateComfyUIWorkflowJson(broken)).toThrow(/whole value/)
+  })
+
+  it('derives the conditioning resolution from the requested size', () => {
+    const withResolution = JSON.stringify({
+      3: { inputs: { prompt: '{{prompt}}', resolution: '{{resolution}}' } },
+      10: { inputs: { width: '{{width}}', height: '{{height}}', batch_size: 1 } },
+    })
+    const square = prepareComfyUIWorkflow(withResolution, { prompt: 'p', seed: 1 }) as Record<string, { inputs: Record<string, unknown> }>
+    expect(square['3'].inputs['resolution']).toBe(1024)
+    const portrait = prepareComfyUIWorkflow(withResolution, { prompt: 'p', seed: 1, width: 768, height: 1344 }) as Record<string, { inputs: Record<string, unknown> }>
+    expect(portrait['3'].inputs['resolution']).toBe(1344)
+    const wide = prepareComfyUIWorkflow(withResolution, { prompt: 'p', seed: 1, width: 1344, height: 768 }) as Record<string, { inputs: Record<string, unknown> }>
+    expect(wide['3'].inputs['resolution']).toBe(1344)
   })
 
   it('keeps the historical positional form working', () => {

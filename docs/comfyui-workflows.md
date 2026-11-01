@@ -63,6 +63,7 @@ Substitution happens before the workflow is sent to ComfyUI.
 | `{{height}}` | integer | 64–8192 | `EmptyLatentImage.height` |
 | `{{steps}}` | integer | 1–150 | `KSampler.steps` |
 | `{{cfg}}` | number | 0–30 | `KSampler.cfg` |
+| `{{resolution}}` | integer | 64–4096 | `TextEncodeQwenImage21.resolution` — derived, not passed |
 
 Rules that matter:
 
@@ -74,6 +75,11 @@ Rules that matter:
 - Asking for a value the workflow bakes is also an error — the message names the
   placeholder to add.
 - `{{prompt}}` and `{{seed}}` may appear inside longer strings, as before.
+- `{{resolution}}` is **derived**, not supplied: it resolves to the canvas' long
+  side rounded to 32. Qwen Image 2.1 conditions its text encoder on a resolution,
+  and leaving that at 1024 while rendering 1344x768 tells the model the wrong
+  canvas, which weakens composition at non-square sizes. A call cannot set it
+  wrong because it is computed from the width/height it already uses.
 
 ## One workflow instead of three
 

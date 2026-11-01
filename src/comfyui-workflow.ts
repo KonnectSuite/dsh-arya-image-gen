@@ -28,6 +28,17 @@ const NUMERIC_PLACEHOLDERS = {
   cfg: { token: COMFYUI_CFG_PLACEHOLDER, min: 0, max: 30, integer: false, label: 'cfg' },
 } as const
 
+/**
+ * Derived placeholder: the canvas' long side, rounded to the 32-pixel step
+ * Qwen-Image conditioning expects.
+ *
+ * Qwen Image 2.1 conditions the text encoder on a `resolution` value; leaving it
+ * at its 1024 default while rendering 1344x768 tells the model the wrong canvas,
+ * which shows up as weaker composition at non-square sizes. It is derived from
+ * width/height rather than passed by the caller, so a call cannot set it wrong.
+ */
+export const COMFYUI_RESOLUTION_PLACEHOLDER = '{{resolution}}'
+
 type NumericKey = keyof typeof NUMERIC_PLACEHOLDERS
 type JsonRecord = Record<string, unknown>
 
@@ -93,9 +104,8 @@ export function prepareComfyUIWorkflow(workflowJson: string, optionsOrPrompt: Pr
 
   const inject = (value: unknown): unknown => {
     if (typeof value === 'string') {
-      const numericKey = (Object.keys(NUMERIC_PLACEHOLDERS) as NumericKey[])
-        .find(key => NUMERIC_PLACEHOLDERS[key].token === value)
-      if (numericKey !== undefined) return numeric[numericKey]
+      const numericValue = numeric.get(value)
+      if (numericValue !== undefined) return numericValue
       let replaced = value
       if (replaced.includes(COMFYUI_PROMPT_PLACEHOLDER) || replaced.includes(LEGACY_PROMPT_PLACEHOLDER)) {
         promptReplacements += 1
@@ -151,16 +161,22 @@ export function prepareComfyUIWorkflow(workflowJson: string, optionsOrPrompt: Pr
  * mismatch: a requested parameter the workflow never declared, and a declared
  * placeholder left without a value.
  */
-function numericParameters(workflow: JsonRecord, options: PrepareWorkflowOptions): Record<NumericKey, number> {
+function numericParameters(workflow: JsonRecord, options: PrepareWorkflowOptions): Map<string, number> {
   const declared = new Set<NumericKey>()
+  let wantsResolution = false
+  let bakedWidth: number | undefined
+  let bakedHeight: number | undefined
   for (const node of Object.values(workflow)) {
     const inputs = record(record(node)?.inputs)
     if (inputs === undefined) continue
     for (const key of Object.keys(NUMERIC_PLACEHOLDERS) as NumericKey[]) {
       if (inputs[key] === NUMERIC_PLACEHOLDERS[key].token) declared.add(key)
     }
+    if (inputs['resolution'] === COMFYUI_RESOLUTION_PLACEHOLDER) wantsResolution = true
+    if (bakedWidth === undefined && typeof inputs['width'] === 'number') bakedWidth = inputs['width']
+    if (bakedHeight === undefined && typeof inputs['height'] === 'number') bakedHeight = inputs['height']
   }
-  const out = {} as Record<NumericKey, number>
+  const out = new Map<string, number>()
   for (const key of Object.keys(NUMERIC_PLACEHOLDERS) as NumericKey[]) {
     const spec = NUMERIC_PLACEHOLDERS[key]
     const supplied = options[key]
@@ -176,7 +192,7 @@ function numericParameters(workflow: JsonRecord, options: PrepareWorkflowOptions
       // the Qwen Turbo graphs ship with. Sampling values stay mandatory,
       // because guessing steps or cfg silently changes the picture.
       if (key === 'width' || key === 'height') {
-        out[key] = DEFAULT_CANVAS_SIDE
+        out.set(spec.token, DEFAULT_CANVAS_SIDE)
         continue
       }
       throw new Error(`This workflow declares ${spec.token}; pass ${spec.label} so it can be filled in.`)
@@ -186,7 +202,15 @@ function numericParameters(workflow: JsonRecord, options: PrepareWorkflowOptions
     if (value < spec.min || value > spec.max) {
       throw new Error(`${spec.label} must be between ${String(spec.min)} and ${String(spec.max)} (got ${String(supplied)})`)
     }
-    out[key] = value
+    out.set(spec.token, value)
+  }
+  if (wantsResolution) {
+    // Long side, snapped to the 32-pixel step the conditioning expects.
+    const width = out.get(COMFYUI_WIDTH_PLACEHOLDER) ?? bakedWidth ?? DEFAULT_CANVAS_SIDE
+    const height = out.get(COMFYUI_HEIGHT_PLACEHOLDER) ?? bakedHeight ?? DEFAULT_CANVAS_SIDE
+    const longSide = Math.max(width, height)
+    const snapped = Math.max(64, Math.min(4096, Math.round(longSide / 32) * 32))
+    out.set(COMFYUI_RESOLUTION_PLACEHOLDER, snapped)
   }
   return out
 }
@@ -199,7 +223,7 @@ function numericParameters(workflow: JsonRecord, options: PrepareWorkflowOptions
 function assertNumericPlaceholdersWhole(workflow: JsonRecord): void {
   const visit = (value: unknown, nodeId: string, key: string): void => {
     if (typeof value === 'string') {
-      for (const spec of Object.values(NUMERIC_PLACEHOLDERS)) {
+      for (const spec of [...Object.values(NUMERIC_PLACEHOLDERS), { token: COMFYUI_RESOLUTION_PLACEHOLDER }]) {
         if (!value.includes(spec.token)) continue
         if (value !== spec.token) {
           throw new Error(`${spec.token} must be the whole value of a numeric input (node ${nodeId}, input "${key}"), not part of a longer string`)

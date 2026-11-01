@@ -43,7 +43,7 @@
                                       ],
                               "prompt":  "{{prompt}}",
                               "negative_prompt":  "",
-                              "resolution":  1024
+                              "resolution": "{{resolution}}"
                           },
                "class_type":  "TextEncodeQwenImage21"
            },

@@ -541,7 +541,7 @@ export interface ComfyUIGenerationParams {
 /** Which parameters one workflow exposes, plus the size it bakes when fixed. */
 export interface ComfyUIWorkflowCapabilities {
   role: ComfyUIWorkflowRole
-  placeholders: { width: boolean; height: boolean; steps: boolean; cfg: boolean }
+  placeholders: { width: boolean; height: boolean; steps: boolean; cfg: boolean; resolution?: boolean }
   bakedSize?: { width: number; height: number }
 }
 
@@ -568,7 +568,7 @@ export const COMFYUI_SIZE_PRESETS: readonly { id: string; label: string; width: 
  * @returns detected capabilities.
  */
 export function describeWorkflowJson(json: string): ComfyUIWorkflowCapabilities {
-  const placeholders = { width: false, height: false, steps: false, cfg: false }
+  const placeholders = { width: false, height: false, steps: false, cfg: false, resolution: json.includes('{{resolution}}') }
   const role: ComfyUIWorkflowRole = json.includes('{{image}}') || json.includes('%image%') ? 'image-to-image' : 'text-to-image'
   let parsed: unknown
   try {

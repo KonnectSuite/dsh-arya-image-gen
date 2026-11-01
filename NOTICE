@@ -1,0 +1,24 @@
+dsh-arya-image-gen
+Copyright 2026 AryaCode
+
+This product is a derivative work of dsh-image-gen
+(https://github.com/shanliuling/dsh-image-gen), Copyright 2026 shanliuling,
+licensed under the Apache License, Version 2.0.
+
+AryaCode changes relative to the upstream project:
+
+- Removed all cloud image providers (Google Gemini, OpenAI, OpenAI-compatible
+  relays, ByteDance Seedream, Alibaba DashScope, xAI Grok, Zhipu GLM) and the
+  subscription sign-in channels (ChatGPT, Grok, Google).
+- Removed the credential/API-key management UI and server code.
+- Reduced the provider set to a local ComfyUI server and its imported
+  API-format workflows.
+- Added local ComfyUI server lifecycle controls (start, stop, restart, status,
+  optional auto-start) and a settings card for them.
+- Added ComfyUI workflow support to the Studio workbench, the infinite canvas,
+  and workflow-vs-workflow comparison.
+- Converted all user-facing strings, documentation, and bundled inspiration
+  content to English.
+- Renamed the package to dsh-arya-image-gen and rebranded it for AryaCode.
+
+The original Apache-2.0 license text is preserved in LICENSE.

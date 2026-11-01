@@ -1,17 +1,17 @@
 {
-  "name": "dsh-image-gen",
-  "version": "0.10.0",
-  "description": "Bring ChatGPT-like image generation to DeepSeek Harness — Gemini, OpenAI, Seedream, DashScope, local ComfyUI & more.",
+  "name": "dsh-arya-image-gen",
+  "version": "0.11.0",
+  "description": "ComfyUI-native image generation for DeepSeek Harness: chat tools, creative canvas, Studio workbench, workflow comparison, and built-in server control.",
   "type": "module",
-  "author": "shanliuling",
+  "author": "AryaCode",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shanliuling/dsh-image-gen.git"
+    "url": "git+https://github.com/KonnectSuite/dsh-arya-image-gen.git"
   },
   "bugs": {
-    "url": "https://github.com/shanliuling/dsh-image-gen/issues"
+    "url": "https://github.com/KonnectSuite/dsh-arya-image-gen/issues"
   },
-  "homepage": "https://github.com/shanliuling/dsh-image-gen#readme",
+  "homepage": "https://github.com/KonnectSuite/dsh-arya-image-gen#readme",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
@@ -32,9 +32,9 @@
     "skills/**/*.md",
     "cordis.patch.yml",
     "README.md",
-    "README.en.md",
     "docs/assets/readme/*.webp",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "dsh": {
     "bundle": {
@@ -71,22 +71,12 @@
     "deepseek-harness",
     "dsh",
     "dsh-plugin",
-    "ai-agent",
+    "comfyui",
+    "comfyui-workflow",
     "image-generation",
     "ai-image-generation",
-    "multimodal",
-    "gemini",
-    "openai",
-    "openai-compatible",
-    "seedream",
-    "dashscope",
-    "comfyui",
-    "local-image-generation",
-    "wanx",
-    "aliyun",
-    "volcengine",
-    "byok",
-    "cordis"
+    "local-ai",
+    "workflow"
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0 <5",

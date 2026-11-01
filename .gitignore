@@ -4,3 +4,6 @@ lib/
 .DS_Store
 *.log
 .smoke-home/
+launch-dev.cmd
+dev-instance.log
+dev-instance.err.log

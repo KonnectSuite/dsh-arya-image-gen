@@ -20,7 +20,7 @@ import {
 
 const MAX_INDEX_BYTES = 3 * 1024 * 1024
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
-/** 磁盘缓存上限 200MB，LRU 淘汰最旧文件 */
+/** Disk cache cap: 200 MB, oldest files evicted first. */
 const CACHE_MAX_BYTES = 200 * 1024 * 1024
 const REMOTE_API = 'https://api.github.com/repos/freestylefly/awesome-gpt-image-2/commits/main'
 const REMOTE_RAW = 'https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2'
@@ -47,16 +47,10 @@ export function createInspirationRoute(deps: InspirationRouteDeps = {}) {
       return json(res, 200, publicInspirationCatalog(activeCatalog))
     }
     if (req.method === 'POST' && url.pathname === '/refresh') {
-      try {
-        const refreshed = await fetchSnapshot(request)
-        // Only the awesome-gpt-image-2 source is refreshable at runtime; the
-        // handraw-style source is pinned to the bundled snapshot.
-        const handdraw = BUNDLED_INSPIRATION_CATALOG.sources.find(source => source.id === HANDDRAW_SOURCE_ID)
-        activeCatalog = { schemaVersion: 1, sources: [...refreshed.sources, ...(handdraw !== undefined ? [handdraw] : [])] }
-        return json(res, 200, publicInspirationCatalog(activeCatalog))
-      } catch (error) {
-        return jsonError(res, 502, message(error, 'refresh-failed'))
-      }
+      // This fork bundles an English catalog; there is no English upstream to
+      // refresh from, so a refresh restores the bundled content.
+      activeCatalog = BUNDLED_INSPIRATION_CATALOG
+      return json(res, 200, publicInspirationCatalog(activeCatalog))
     }
     if (req.method === 'POST' && url.pathname === '/cache/clear') {
       diskCacheEpoch += 1
@@ -67,28 +61,18 @@ export function createInspirationRoute(deps: InspirationRouteDeps = {}) {
     if (req.method !== 'GET' || match === null) return jsonError(res, 404, 'not-found')
     const [, sourceId, caseId] = match
     if (sourceId === undefined || caseId === undefined || ![INSPIRATION_SOURCE_ID, HANDDRAW_SOURCE_ID].includes(sourceId)) return jsonError(res, 404, 'source-not-found')
-    let item = findInspirationCase(activeCatalog, sourceId, caseId)
-    // A browser can retain a manually refreshed catalog across a plugin restart.
-    // Resolve one unknown case against the fixed upstream source, then keep the
-    // result in this process. Do not retry arbitrary misses indefinitely.
-    if (item === undefined && sourceId === INSPIRATION_SOURCE_ID && !triedRefreshForUnknownCase) {
-      triedRefreshForUnknownCase = true
-      try {
-        activeCatalog = await fetchSnapshot(request)
-        item = findInspirationCase(activeCatalog, sourceId, caseId)
-      } catch {}
-    }
+    const item = findInspirationCase(activeCatalog, sourceId, caseId)
     if (item === undefined) return jsonError(res, 404, 'case-not-found')
     const cacheKey = `${sourceId}_${caseId}`
     const requestEpoch = diskCacheEpoch
     const source = activeCatalog.sources.find(candidate => candidate.id === sourceId)
-    // 1. 先查磁盘缓存——命中则零网络开销直接返回 (纯异步非阻塞)
+    // 1. Disk cache first: a hit returns with no network cost.
     const cached = await readImageCache(cacheKey)
     if (cached !== undefined) {
       sendImage(req, res, 200, cached.data, cached.type)
       return
     }
-    // 2. 磁盘未命中，走三源瀑布降级拉取
+    // 2. Miss: fall back through the mirrored image sources.
     for (const imageUrl of imageUrls(source, item.imagePath)) {
       try {
         const upstream = await request(imageUrl, {
@@ -101,10 +85,10 @@ export function createInspirationRoute(deps: InspirationRouteDeps = {}) {
         if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) continue
         const declaredBytes = Number(upstream.headers.get('content-length') ?? '0')
         if (Number.isFinite(declaredBytes) && declaredBytes > MAX_IMAGE_BYTES) continue
-        // 流式限长读取：边读边算，超 12MB 立刻拔网线，防御 chunked 内存尖峰
+        // Bounded streaming read: cancel past 12 MB to cap chunked memory spikes.
         const body = await readLimitedStream(upstream, MAX_IMAGE_BYTES)
         if (body === null || body.byteLength === 0) continue
-        // 3. 拉取成功，异步写入磁盘缓存（串行排队 + 防崩溃吞错 + 代次校验）
+        // 3. Success: enqueue the disk-cache write.
         if (requestEpoch === diskCacheEpoch) {
           writeImageCache(cacheKey, type, body)
         }
@@ -183,31 +167,9 @@ async function readLimitedStream(upstream: Response, maxBytes: number): Promise<
   return result
 }
 
-async function fetchSnapshot(request: typeof fetch): Promise<ResolvedInspirationCatalog> {
-  const commitResponse = await request(REMOTE_API, { cache: 'no-store', signal: AbortSignal.timeout(10_000), headers: { accept: 'application/vnd.github+json' } })
-  if (!commitResponse.ok) throw new Error(`素材源不可用 (${String(commitResponse.status)})`)
-  const commit = await commitResponse.json() as { sha?: unknown; commit?: { author?: { date?: unknown } } }
-  const sha = typeof commit.sha === 'string' && /^[a-f0-9]{40}$/i.test(commit.sha) ? commit.sha : undefined
-  if (sha === undefined) throw new Error('素材源版本无效')
-  const response = await request(`${REMOTE_RAW}/${sha}/data/cases.json`, { cache: 'no-store', signal: AbortSignal.timeout(15_000), redirect: 'error' })
-  if (!response.ok) throw new Error(`素材索引不可用 (${String(response.status)})`)
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength === 0 || bytes.byteLength > MAX_INDEX_BYTES) throw new Error('素材索引体积无效')
-  const catalog = parseInspirationSnapshot(JSON.parse(new TextDecoder().decode(bytes)), sha)
-  if (catalog.sources[0]?.cases.length === 0 || catalog.sources[0]!.cases.length > MAX_INSPIRATION_CASES) {
-    throw new Error('素材索引校验失败')
-  }
-  // The upstream repository does not publish a manifest yet. Keep the digest
-  // with the versioned catalog so a later manifest can verify it before publish.
-  catalog.sources[0]!.integritySha256 = createHash('sha256').update(bytes).digest('hex')
-  const updatedAt = commit.commit?.author?.date
-  if (typeof updatedAt === 'string' && Number.isFinite(Date.parse(updatedAt))) catalog.sources[0]!.updatedAt = updatedAt
-  return catalog
-}
-
 function imageUrls(source: ResolvedSource | undefined, imagePath: string): string[] {
   if (source?.id === HANDDRAW_SOURCE_ID) {
-    // handraw-style 静态仓库：jsDelivr CDN 优先，GitHub Raw 兜底；版本钉死在快照提交。
+    // handraw-style static repo: jsDelivr CDN first, GitHub raw as fallback.
     return [
       `https://cdn.jsdelivr.net/gh/yang0/handraw-style@${HANDDRAW_SOURCE_VERSION}${imagePath}`,
       `https://raw.githubusercontent.com/yang0/handraw-style/${HANDDRAW_SOURCE_VERSION}${imagePath}`,
@@ -216,8 +178,8 @@ function imageUrls(source: ResolvedSource | undefined, imagePath: string): strin
   const commit = typeof source?.version === 'string' && /^[a-f0-9]{40}$/i.test(source.version)
     ? source.version
     : INSPIRATION_SOURCE_VERSION
-  // 三源瀑布降级：jsDelivr 国内有网宿 CDN 节点可直连 → 苍何镜像 → GitHub Raw（需 VPN）
-  // imagePath 形如 /images/case544.jpg，GitHub 仓库实际路径为 data/images/...
+  // Three-source fallback: jsDelivr CDN, a mirror, then GitHub raw.
+  // imagePath looks like /images/case544.jpg; the repo path is data/images/...
   return [
     `https://cdn.jsdelivr.net/gh/freestylefly/awesome-gpt-image-2@${commit}/data${imagePath}`,
     `${INSPIRATION_SOURCE_IMAGE_MIRROR}${imagePath}`,

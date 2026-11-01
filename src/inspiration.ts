@@ -146,7 +146,7 @@ export function parseInspirationSnapshot(
     sources: [
       parseInspirationSource(value, {
         id: INSPIRATION_SOURCE_ID,
-        label: 'GPT Image 2 案例库',
+        label: 'GPT Image 2 catalog',
         repository: INSPIRATION_SOURCE_REPOSITORY,
         version,
         updatedAt,
@@ -222,7 +222,7 @@ export const BUNDLED_INSPIRATION_CATALOG: ResolvedInspirationCatalog = {
     parseInspirationSnapshot(rawCases).sources[0]!,
     parseInspirationSource(rawHanddrawCases, {
       id: HANDDRAW_SOURCE_ID,
-      label: '手绘风格图鉴',
+      label: 'Hand-drawn style catalog',
       repository: HANDDRAW_SOURCE_REPOSITORY,
       version: HANDDRAW_SOURCE_VERSION,
       updatedAt: HANDDRAW_SOURCE_UPDATED_AT,

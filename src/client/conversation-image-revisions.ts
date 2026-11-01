@@ -1,20 +1,15 @@
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { STUDIO_PROVIDERS, STUDIO_WATERMARK_VALUES, type StudioProvider, type StudioWatermark } from '../shared.js'
+import { STUDIO_PROVIDERS, type StudioProvider } from '../shared.js'
 
 /** One regenerated version displayed in place of an original conversation image. */
 export interface ConversationImageRevision {
   attachment: ImageAttachmentRef
   prompt: string
   provider: StudioProvider
-  channel?: string
+  /** Workflow that produced this revision. */
   model: string
   output: string
   createdAt: number
-  ratio: string
-  quality: string
-  resolution?: string
-  generationQuality?: string
-  watermark?: StudioWatermark
 }
 
 export interface ConversationImageRevisionChain {
@@ -93,17 +88,11 @@ function isRevision(value: unknown): value is ConversationImageRevision {
   return isAttachment(candidate.attachment)
     && typeof candidate.provider === 'string'
     && (STUDIO_PROVIDERS as readonly string[]).includes(candidate.provider)
-    && (candidate.channel === undefined || typeof candidate.channel === 'string')
     && typeof candidate.prompt === 'string'
     && typeof candidate.model === 'string'
     && typeof candidate.output === 'string'
     && typeof candidate.createdAt === 'number'
     && Number.isFinite(candidate.createdAt)
-    && typeof candidate.ratio === 'string'
-    && typeof candidate.quality === 'string'
-    && (candidate.resolution === undefined || typeof candidate.resolution === 'string')
-    && (candidate.generationQuality === undefined || typeof candidate.generationQuality === 'string')
-    && (candidate.watermark === undefined || STUDIO_WATERMARK_VALUES.some(value => value === candidate.watermark))
 }
 
 function isAttachment(value: unknown): value is ImageAttachmentRef {

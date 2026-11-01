@@ -127,6 +127,11 @@ function countImagePlaceholders(workflow: JsonRecord): number {
   return count
 }
 
+/** True when the workflow JSON declares an image input, so it can run edits. */
+export function hasComfyUIImagePlaceholder(workflowJson: string): boolean {
+  return workflowJson.includes(COMFYUI_IMAGE_PLACEHOLDER) || workflowJson.includes(LEGACY_IMAGE_PLACEHOLDER)
+}
+
 function isImagePlaceholder(value: unknown): boolean {
   return value === COMFYUI_IMAGE_PLACEHOLDER || value === LEGACY_IMAGE_PLACEHOLDER
 }

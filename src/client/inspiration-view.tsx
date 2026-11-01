@@ -7,7 +7,6 @@ import { loadCachedInspirationCatalog, saveCachedInspirationCatalog } from './in
 import {
   BAOYU_COMPOSER_SOURCE_ID,
   BAOYU_DEFAULT_SELECTION,
-  BAOYU_LABELS_ZH,
   BAOYU_MOODS,
   BAOYU_PALETTES,
   BAOYU_RENDERINGS,
@@ -99,29 +98,11 @@ const TAG_MAP_ZH: Record<string, string> = {
   'Oil Painting': '油画质感',
 }
 
-function translateTag(name: string, lang: Language): string {
-  if (lang !== 'zh') return name
-  return TAG_MAP_ZH[name] ?? name
+function translateTag(name: string, _lang: Language): string {
+  return name
 }
 
 const COPY = {
-  zh: {
-    kicker: 'Prompt inspiration', title: '灵感素材', subtitle: '从公开案例中找构图、质感和文字处理，再带回工作台继续调整。',
-    refresh: '检查更新', refreshing: '正在更新…', clearCache: '清理缓存', clearingCache: '正在清理…', cacheCleared: '已清空本地图片缓存', cacheClearFailed: '清理缓存失败', clearCacheRestart: '后端未就绪，请重启 DSH 后生效',
-    clearModalTitle: '清理本地图片缓存？', clearModalDesc: '将删除本地保存的灵感素材图片以释放磁盘空间。案例列表、Prompt 和您的收藏夹不会受到任何影响，后续浏览时会自动重新拉取。', cancel: '取消', confirmClear: '确认清理',
-    allCategories: '全部分类', allStyles: '全部风格', allScenes: '全部场景', categoryNav: '分类导航',
-    search: '搜索案例、Prompt、风格…', results: '找到 {count} 个案例', noResults: '没有匹配的素材，换个关键词或筛选条件试试。',
-    selectHint: '选择一张素材，查看完整 Prompt 并带回工作台。', prompt: '完整 Prompt', copy: '复制 Prompt', copied: '已复制', use: '使用这个 Prompt', source: '查看原来源',
-    useReference: '提示词 + 参考图', referenceLoading: '获取参考图中…', referenceFailed: '参考图获取失败，请重试',
-    loading: '正在读取素材库…', loadFailed: '素材库读取失败，请稍后重试。', copyFailed: '复制失败', retry: '重新加载', imageFailed: '图片暂时无法读取', featured: '精选', updated: '素材已更新（{count} 条）', updateFailed: '更新失败，仍在使用当前内置素材。',
-    allLoaded: '已展示全部 {count} 个案例', onlyFavorites: '仅看收藏', noFavorites: '暂无收藏的灵感案例，浏览时点击星标即可收藏。',
-    favorite: '收藏', favorited: '已收藏', zoomHint: '点击放大查看', close: '关闭',
-    composeTab: '宝玉维度组合',
-    composeHint: '五个维度自由拼接封面 Prompt，数据源自宝玉封图 skill（JimLiu/baoyu-skills，MIT）。',
-    composeType: '类型', composePalette: '色板', composeRendering: '渲染', composeText: '文字', composeMood: '情绪',
-    composeTitleLabel: '标题文字', composeTitlePlaceholder: '输入封面标题（文字层级含标题时必填）', composeTitleRequired: '该文字层级需要先填写标题。',
-    composeRandomize: '随机组合', composeUse: '用此 Prompt 去生成', composeCombos: '共 {count} 种组合', composePreview: '拼接结果预览',
-  },
   en: {
     kicker: 'Prompt inspiration', title: 'Inspiration', subtitle: 'Explore public examples, then bring a prompt back to Studio to make it your own.',
     refresh: 'Check updates', refreshing: 'Updating…', clearCache: 'Clear cache', clearingCache: 'Clearing…', cacheCleared: 'Local image cache cleared', cacheClearFailed: 'Failed to clear cache', clearCacheRestart: 'Backend not ready, please restart DSH',
@@ -141,10 +122,10 @@ const COPY = {
   },
 } as const
 
-type CopyKey = keyof typeof COPY.zh
+type CopyKey = keyof typeof COPY.en
 
 export const InspirationView: FC<{ locale?: LocaleService | undefined; onUsePrompt(prompt: string): void; onUseReference?: ((file: File, prompt: string) => void) | undefined }> = ({ locale, onUsePrompt, onUseReference }) => {
-  const [language, setLanguage] = useState<Language>(() => locale?.getSnapshot?.().active?.startsWith('en') ? 'en' : 'zh')
+  const [language, setLanguage] = useState<Language>(() => 'en')
   const [catalog, setCatalog] = useState<InspirationCatalog | null>(null)
   const [activeSourceId, setActiveSourceId] = useState('')
   const [baoyuSelection, setBaoyuSelection] = useState<BaoyuSelection>(BAOYU_DEFAULT_SELECTION)
@@ -176,7 +157,7 @@ export const InspirationView: FC<{ locale?: LocaleService | undefined; onUseProm
   }, [locale])
 
   const t = (key: CopyKey, values?: Record<string, string>) => {
-    let value: string = COPY[language][key] ?? COPY.zh[key]
+    let value: string = COPY.en[key]
     for (const [name, replacement] of Object.entries(values ?? {})) value = value.replace(`{${name}}`, replacement)
     return value
   }
@@ -717,7 +698,7 @@ const BaoyuComposerPanel: FC<{
   const [copied, setCopied] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
   const tr = (key: CopyKey, params?: Record<string, string>): string => {
-    let text: string = COPY[language][key] ?? COPY.zh[key]
+    let text: string = COPY.en[key]
     if (params) {
       for (const [k, v] of Object.entries(params)) {
         text = text.replace(`{${k}}`, v)
@@ -725,7 +706,7 @@ const BaoyuComposerPanel: FC<{
     }
     return text
   }
-  const label = (id: string): string => (language === 'zh' ? BAOYU_LABELS_ZH[id] ?? id : id)
+  const label = (id: string): string => id.charAt(0).toUpperCase() + id.slice(1)
   const needsTitle = selection.text !== 'none'
   const titleReady = !needsTitle || selection.title.trim() !== ''
   let prompt = ''
@@ -853,7 +834,7 @@ const InspirationCard: FC<{
           e.stopPropagation()
           onToggleFavorite()
         }}
-        aria-label="收藏"
+        aria-label="Favorite"
       >
         <Star size={13} className={isFavorited ? 'fill-star' : ''} />
       </button>

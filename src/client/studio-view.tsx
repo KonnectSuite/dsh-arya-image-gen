@@ -32,13 +32,11 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import { DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, isSubscriptionProvider, studioWatermarkCapability, studioModelForMode, studioModelOptionsForMode, studioTargetKey, type CloudImageProvider, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
+import { DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, PROVIDER_DEFAULT_QUALITY, isSubscriptionProvider, studioModelForMode, studioModelOptionsForMode, studioTargetKey, studioWatermarkCapability, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
 import { deleteGalleryItem, getGalleryItems, saveGalleryItem, subscribeGallery, toggleFavoriteGalleryItem, type GalleryItem, saveFavoritePrompt, getFavoritePrompts, deleteFavoritePrompt, subscribeFavorites, addFavoriteFolder, getFavoriteFolders, deleteFavoriteFolder, moveFavoritePrompt, updateFavoritePrompt, type FavoritePrompt, type FavoriteFolder } from './gallery-store.js'
 import { evictAttachmentCache, fetchAttachmentBlob } from './image-cache.js'
 import { copyImageBlob, downloadBlobUrl, formatRelativeTime } from './browser-image-utils.js'
 import { buildComparisonTargets, comparisonOptionUnion, comparisonOutputOptions, initialComparisonProviders } from './multi-model-compare.js'
-import { PROVIDER_DEFAULT_QUALITY } from '../openai-output.js'
-import { WatermarkControl } from './watermark-control.js'
 import { clearStudioTlCanvases, StudioTlCanvas } from './tl/studio-tl-canvas.js'
 import { pushTlLandings } from './tl/tl-canvas-bridge.js'
 import { GalleryCanvasButton } from './tl/gallery-canvas-button.js'
@@ -61,46 +59,8 @@ export interface StudioReferenceItem {
 }
 
 const COPY = {
-  zh: {
-    title: '云端生图工作台', configured: 'API 已配置', unconfigured: '未配置', recent: '最近生成', empty: '暂无生成历史',
-    railTabRecent: '最新生成', railTabFavorites: '收藏', favImages: '收藏图片', favPrompts: '收藏提示词',
-    favNewFolder: '新建文件夹', favFolderPlaceholder: '文件夹名称', favCreate: '创建', favCancel: '取消',
-    favMoveTo: '移动到文件夹', favNoFolder: '未分组', favMove: '移动', favDeleteFolder: '删除文件夹',
-    favEditPrompt: '编辑提示词', favUse: '使用', favSave: '保存', favEditPromptPlaceholder: '输入提示词内容…', favFolder: '所属文件夹',
-    favEmptyImages: '在图片操作区点「收藏」后，图片会显示在这里', favEmptyPrompts: '点提示词输入框旁的「☆ 收藏」后，提示词会显示在这里',
-    favoritePrompt: '收藏提示词', favActionShort: '收藏', favPromptSaved: '已收藏提示词',
-    favPromptApplied: '已填入提示词', favRefApplied: '已加入参考图', favSaveFailed: '收藏失败，请重试',
-    generate: '文生图', edit: '图生图', reference: '参考图', optional: '选填', upload: '点击或拖拽图片到此处',
-    uploadHint: '支持 JPG / PNG / WebP / GIF，最大 10MB（最多 5 张）', prompt: '提示词 Prompt', clear: '清空', promptPlaceholder: '描述主体、构图、风格、光线与需要出现的文字…（支持 Ctrl+Enter 快捷生成）',
-    provider: 'Provider', model: 'Model', ratio: '比例', quality: '清晰度', subscriptionParameterHint: '所选比例会自动补充到生成提示词中；实际尺寸和清晰度仍由 ChatGPT 决定，请以生成结果为准。', subscriptionRatioMismatch: 'ChatGPT 订阅未按所选比例出图，请查看实际尺寸。', start: '开始生成', generating: '正在生成…', cancelGenerate: '取消生成',
-    count: '生成数量', countUnit: '{n} 张', partialSuccess: '已生成 {success} 张图片，{failed} 张失败', generatingCount: '正在生成（共 {count} 张）…',
-    batchResult: '本次生成（共 {count} 张）',
-    singleModel: '单模型', compareModels: '多模型对比', compareHint: '相同提示词，同时交给多个模型', compareSelect: '选择模型', compareSelected: '已选 {count} 个模型',
-    compareNeedTwo: '请至少选择两个已配置模型', compareParameterHint: '不支持所选参数的模型会自动使用默认值', compareAdjusted: '已适配', comparePartial: '{success} 个模型生成成功，{failed} 个失败',
-    comparing: '正在对比（共 {count} 个模型）…', compareStart: '开始对比',
-    saveToGallery: '保存', saveSelected: '保存({count})', savedToGallery: '已保存到画廊', savedSelected: '已保存 {count} 张图片', inGallery: '已保存', needSelectResult: '请先勾选要保存的图片',
-    retry: '重新加载', configLoadFailed: '工作台配置加载失败，请检查服务后重试。',
-    noProvider: '请先在设置中配置至少一个云端图像 Provider 的 API Key。', selectConfigured: '该 Provider 尚未配置，请先到设置中配置 API Key。',
-    needPrompt: '请输入提示词', needReference: '请先添加至少一张参考图', result: '本次结果', continueEdit: '继续编辑（垫图）', regenerate: '再次生成',
-    copy: '复制', copied: '已复制到剪贴板', copyFailed: '复制失败', download: '下载', remove: '删除', fit: '适应窗口', infiniteCanvas: '无限画布', loading: '正在读取图片…', generationFailed: '生成失败', gatewayTimeout: '请求被反向代理中断（超时）：请重试；反复出现需调大代理超时或换直连网络', requestFailed: '请求失败（HTTP {status}）',
-    selectHistory: '从左侧选择一张图片，或在右侧开始新的生成。', created: '生成时间', elapsed: '耗时', dimensions: '尺寸', output: '输出参数',
-    closeReference: '移除参考图', uploadInvalid: '请选择有效的图片文件（最大 10MB）', uploadUnreadable: '部分图片读取失败，请重新选择后再试', imageLoadFailed: '图片读取失败',
-    fullscreen: '大图全屏', close: '关闭', copyPpt: '复制 Prompt', copiedPrompt: '已复制 Prompt', copiedImage: '已复制图片',
-    favorite: '收藏', favorited: '已收藏', favoriteAdded: '已添加到收藏', favoriteRemoved: '已取消收藏', gallerySaveFailed: '保存到图库失败，请重试',
-    loadMore: '加载更多 ({n})', deleteModalTitle: '从图库删除', deleteModalDesc: '确定从图库中删除这张图片吗？（原聊天记录不会受影响）',
-    deleteWorkspaceFilesLabel: '同时删除工作区本地文件', confirm: '确定删除', cancel: '取消', deletedToast: '已从图库删除',
-    referencesCount: '参考图 ({current}/{max})', addMoreRef: '+ 添加', maxReferencesExceeded: '最多支持添加 {max} 张参考图',
-    newGeneration: '新建生成', new: '新建',
-    configuredCount: 'API 已配置 · {count}', unconfiguredStatus: 'API 未配置', providerStatus: '云端提供商与模型状态',
-    configuredSplit: 'API {api} · 订阅 {sub}', subSignedIn: '已登录', subSignedOut: '未登录',
-    collapseSidebar: '折叠最近生成', expandSidebar: '展开最近生成',
-    collapseGenerate: '折叠生成面板', expandGenerate: '展开生成面板', generatePanel: '生成面板',
-    findInspiration: '找灵感',
-    infiniteCanvasHint: '无限画布与侧边栏会话联动，才是完整功能。打开 DSH 右侧边栏的「图像工作台」即可解锁。',
-    clearCanvas: '清空画布', clearCanvasDescription: '将永久清空所有画布页面的内容、图片资产和撤销历史。画廊已保存的卡片及原图不受影响，此操作无法撤销。', canvasCleared: '画布已清空，画廊不受影响',
-  },
   en: {
-    title: 'Cloud Image Studio', configured: 'API configured', unconfigured: 'Not configured', recent: 'Recent generations', empty: 'No generated images yet',
+    title: 'ComfyUI Workbench', configured: 'Ready', unconfigured: 'Missing', recent: 'Recent generations', empty: 'No generated images yet',
     railTabRecent: 'Latest', railTabFavorites: 'Favorites', favImages: 'Favorite images', favPrompts: 'Favorite prompts',
     favNewFolder: 'New folder', favFolderPlaceholder: 'Folder name', favCreate: 'Create', favCancel: 'Cancel',
     favMoveTo: 'Move to folder', favNoFolder: 'Unfiled', favMove: 'Move', favDeleteFolder: 'Delete folder',
@@ -110,15 +70,15 @@ const COPY = {
     favPromptApplied: 'Prompt applied', favRefApplied: 'Reference added', favSaveFailed: 'Could not save; please retry',
     generate: 'Text to image', edit: 'Image to image', reference: 'Reference image', optional: 'optional', upload: 'Click or drop images here',
     uploadHint: 'JPG / PNG / WebP / GIF, up to 10MB (max 5)', prompt: 'Prompt', clear: 'Clear', promptPlaceholder: 'Describe the subject, composition, style, lighting, and exact text… (Ctrl+Enter to generate)',
-    provider: 'Provider', model: 'Model', ratio: 'Aspect ratio', quality: 'Quality', subscriptionParameterHint: 'The selected aspect ratio is automatically added to the generation prompt. ChatGPT still determines the final dimensions and quality; check the generated result.', subscriptionRatioMismatch: 'ChatGPT subscription returned a different aspect ratio. Check the actual dimensions.', start: 'Generate', generating: 'Generating…', cancelGenerate: 'Cancel',
+    provider: 'Provider', model: 'Model', workflow: 'Workflow', workflowCount: '{count} workflows', noWorkflows: 'No workflows', noWorkflowHint: 'Import an API-format workflow JSON in Settings > Plugins > Arya Image Gen to start generating.', workflowEditUnsupported: 'This workflow has no image input; pick an edit workflow for image-to-image.', ratio: 'Aspect ratio', quality: 'Quality', subscriptionParameterHint: 'The selected aspect ratio is automatically added to the generation prompt. ChatGPT still determines the final dimensions and quality; check the generated result.', subscriptionRatioMismatch: 'ChatGPT subscription returned a different aspect ratio. Check the actual dimensions.', start: 'Generate', generating: 'Generating…', cancelGenerate: 'Cancel',
     count: 'Number of images', countUnit: '{n}', partialSuccess: 'Generated {success} images, {failed} failed', generatingCount: 'Generating ({count} images)…',
     batchResult: 'Generated {count} images',
-    singleModel: 'Single model', compareModels: 'Compare models', compareHint: 'Send the same prompt to multiple models', compareSelect: 'Choose models', compareSelected: '{count} models selected',
-    compareNeedTwo: 'Select at least two configured models', compareParameterHint: 'Unsupported settings use each model’s default', compareAdjusted: 'Adjusted', comparePartial: '{success} models succeeded, {failed} failed',
-    comparing: 'Comparing {count} models…', compareStart: 'Compare models',
+    singleModel: 'Single workflow', compareModels: 'Compare workflows', compareHint: 'Send the same prompt to multiple workflows', compareSelect: 'Choose workflows', compareSelected: '{count} workflows selected',
+    compareNeedTwo: 'Select at least two workflows', compareParameterHint: 'Each workflow runs with its own preset prompt', compareAdjusted: 'Adjusted', comparePartial: '{success} workflows succeeded, {failed} failed',
+    comparing: 'Comparing {count} workflows…', compareStart: 'Compare models',
     saveToGallery: 'Save to Gallery', saveSelected: 'Save selected ({count})', savedToGallery: 'Saved to Gallery', savedSelected: 'Saved {count} images', inGallery: 'In Gallery', needSelectResult: 'Select images to save first',
     retry: 'Retry', configLoadFailed: 'Failed to load studio configuration.',
-    noProvider: 'Configure an API key for at least one cloud image provider in Settings.', selectConfigured: 'This provider is not configured. Add its API key in Settings first.',
+    noProvider: 'No workflows imported yet. Import an API-format workflow JSON in Settings > Plugins > Arya Image Gen.', selectConfigured: 'This workflow is not available. Refresh the workbench and pick one again.',
     needPrompt: 'Enter a prompt', needReference: 'Add at least one reference image first', result: 'Current result', continueEdit: 'Continue editing', regenerate: 'Generate again',
     copy: 'Copy', copied: 'Copied to clipboard', copyFailed: 'Copy failed', download: 'Download', remove: 'Delete', fit: 'Fit', infiniteCanvas: 'Infinite canvas', loading: 'Loading image…', generationFailed: 'Generation failed', gatewayTimeout: 'The reverse proxy cut the request (timeout): retry; if it repeats, raise the proxy timeout or use a direct network.', requestFailed: 'Request failed (HTTP {status})',
     selectHistory: 'Select an image on the left, or start a new generation on the right.', created: 'Created', elapsed: 'Elapsed', dimensions: 'Dimensions', output: 'Output',
@@ -129,7 +89,7 @@ const COPY = {
     deleteWorkspaceFilesLabel: 'Also delete local workspace files', confirm: 'Delete', cancel: 'Cancel', deletedToast: 'Deleted from gallery',
     referencesCount: 'References ({current}/{max})', addMoreRef: '+ Add', maxReferencesExceeded: 'Up to {max} reference images allowed',
     newGeneration: 'New generation', new: 'New',
-    configuredCount: 'API configured · {count}', unconfiguredStatus: 'Not configured', providerStatus: 'Provider & Model Status',
+    configuredCount: '{count} workflows', unconfiguredStatus: 'No workflows', providerStatus: 'Workflows',
     configuredSplit: 'API {api} · Sub {sub}', subSignedIn: 'Signed in', subSignedOut: 'Signed out',
     collapseSidebar: 'Collapse sidebar', expandSidebar: 'Expand recent list',
     collapseGenerate: 'Collapse generate panel', expandGenerate: 'Expand generate panel', generatePanel: 'Generate',
@@ -139,7 +99,7 @@ const COPY = {
   },
 } as const
 
-type CopyKey = keyof typeof COPY.zh
+type CopyKey = keyof typeof COPY.en
 
 /** localStorage flag remembering that the one-time infinite-canvas hint was dismissed. */
 const INFINITE_CANVAS_HINT_KEY = 'dsh-ig-infinite-canvas-hint-dismissed'
@@ -206,7 +166,7 @@ export const StudioView: FC<{
   const [visibleLimit, setVisibleLimit] = useState(30)
   const [selected, setSelected] = useState<GalleryItem | null>(null)
   const [mode, setMode] = useState<Mode>('generate')
-  const [provider, setProvider] = useState<StudioProvider>('google')
+  const [provider, setProvider] = useState<StudioProvider>('comfyui')
   const [channel, setChannel] = useState<string | undefined>(undefined)
   const [model, setModel] = useState('')
   const [ratio, setRatio] = useState('1:1')
@@ -307,12 +267,12 @@ export const StudioView: FC<{
 
   const maxReferences = comparisonEnabled
     ? (comparisonProviderKeys.includes('dashscope') ? 3 : 5)
-    : (provider === 'dashscope' ? 3 : 5)
+    : ((provider as string) === 'dashscope' ? 3 : 5)
   const referencesRef = useRef(references)
   referencesRef.current = references
 
   const t = (key: CopyKey, values?: Record<string, string>): string => {
-    let text: string = COPY[lang][key]
+    let text: string = COPY.en[key]
     for (const [name, value] of Object.entries(values ?? {})) text = text.replace(`{${name}}`, value)
     return text
   }
@@ -354,7 +314,7 @@ export const StudioView: FC<{
         const { provider: currentProvider, channel: currentChannel, model: currentModel } = formStateRef.current
         const activeProfile = payload.providers.find(item => item.provider === currentProvider && item.channel === currentChannel)
         if (activeProfile === undefined) {
-          const fallback = payload.providers.find(item => item.provider === payload.activeProvider && item.channel === payload.activeChannel) ?? payload.providers[0]
+          const fallback = payload.providers.find(item => item.provider === payload.activeProvider && item.channel === payload.activeWorkflow) ?? payload.providers[0]
           if (fallback !== undefined) applyProvider(fallback)
         } else if (!studioModelOptionsForMode(activeProfile, 'generate').some(option => option.value === currentModel)) {
           setModel(activeProfile.model)
@@ -363,7 +323,7 @@ export const StudioView: FC<{
           payload.providers.some(item => studioTargetKey(item.provider, item.channel) === selectedKey && item.configured)))
         return
       }
-      const initial = payload.providers.find(item => item.provider === payload.activeProvider && item.channel === payload.activeChannel)
+      const initial = payload.providers.find(item => item.provider === payload.activeProvider && item.channel === payload.activeWorkflow)
         ?? payload.providers.find(item => item.provider === payload.activeProvider)
         ?? payload.providers[0]
       if (initial !== undefined) {
@@ -512,8 +472,8 @@ export const StudioView: FC<{
     () => buildComparisonTargets(comparisonProfiles, comparisonProviderKeys, ratio, quality, { resolution: comparisonResolution, generationQuality: comparisonGenerationQuality }),
     [comparisonProfiles, comparisonProviderKeys, ratio, quality, comparisonResolution, comparisonGenerationQuality],
   )
-  const resolutionOpts = provider === 'openai' ? activeProfile?.resolutionOptions?.[ratio] ?? [] : []
-  const singleQualityOpts = provider === 'openai-compat' ? activeProfile?.resolutionOptions?.[ratio] ?? activeProfile?.qualityOptions ?? [] : activeProfile?.qualityOptions ?? []
+  const resolutionOpts = (provider as string) === 'openai' ? activeProfile?.resolutionOptions?.[ratio] ?? [] : []
+  const singleQualityOpts = (provider as string) === 'openai-compat' ? activeProfile?.resolutionOptions?.[ratio] ?? activeProfile?.qualityOptions ?? [] : activeProfile?.qualityOptions ?? []
   const selectedQuality = singleQualityOpts.some(option => option.value === quality) ? quality : singleQualityOpts[0]?.value ?? quality
   const selectedResolution = resolutionOpts.some(option => option.value === resolution) ? resolution : resolutionOpts[0]?.value
   const selectedGenerationQuality = activeProfile?.generationQualityOptions?.some(option => option.value === generationQuality) ? generationQuality : activeProfile?.defaultGenerationQuality ?? PROVIDER_DEFAULT_QUALITY
@@ -598,7 +558,7 @@ export const StudioView: FC<{
     setRatio(nextRatio)
     if (profile.qualityOptions.some(option => option.value === item.imageSize)) {
       setQuality(item.imageSize!)
-      if (profile.provider === 'openai') setGenerationQuality(item.imageSize!)
+      if ((profile.provider as string) === 'openai') setGenerationQuality(item.imageSize!)
     }
     if (profile.resolutionOptions?.[nextRatio]?.some(option => option.value === item.resolution)) setResolution(item.resolution!)
     if (profile.generationQualityOptions?.some(option => option.value === item.generationQuality)) setGenerationQuality(item.generationQuality!)
@@ -769,7 +729,7 @@ export const StudioView: FC<{
     if (selected === null) return
     const targetItem = selected
     const targetAttId = targetItem.attachment.attachmentId
-    const targetMax = targetItem.provider === 'dashscope' ? 3 : 5
+    const targetMax = (targetItem.provider as string) === 'dashscope' ? 3 : 5
 
     if (referencesRef.current.some(r => r.attachment?.attachmentId === targetAttId)) {
       setMode('edit')
@@ -829,16 +789,13 @@ export const StudioView: FC<{
       return
     }
     if (config === null) return
-    const initial = initialComparisonProviders(comparisonProfiles, provider, channel)
-      .filter(item => mode !== 'edit' || referencesRef.current.length <= 3 || item !== 'dashscope')
-    setComparisonProviderKeys(initial)
-    if (!['1:1', '3:2', '2:3', '16:9', '9:16'].includes(ratio)) setRatio('1:1')
-    if (!['standard', '1K', '2K', '4K'].includes(quality)) setQuality('1K')
+    setComparisonProviderKeys(initialComparisonProviders(comparisonProfiles, model))
   }
 
   const toggleComparisonProvider = (targetKey: string) => {
-    if (mode === 'edit' && targetKey === 'dashscope' && referencesRef.current.length > 3 && !comparisonProviderKeys.includes(targetKey)) {
-      setError(t('maxReferencesExceeded', { max: '3' }))
+    const profile = config?.providers.find(item => studioTargetKey(item.provider, item.channel) === targetKey)
+    if (mode === 'edit' && profile !== undefined && !profile.supportsEditing) {
+      setError(t('workflowEditUnsupported'))
       return
     }
     setComparisonProviderKeys(current => current.includes(targetKey)
@@ -851,7 +808,7 @@ export const StudioView: FC<{
     if (isGenerating || activeProfile === undefined) return
     if (prompt.trim().length === 0) return setError(t('needPrompt'))
     if (comparisonEnabled && comparisonTargets.length < 2) return setError(t('compareNeedTwo'))
-    if (!comparisonEnabled && !activeProfile.configured) return setError(t('selectConfigured'))
+    if (!comparisonEnabled && mode === 'edit' && !activeProfile.supportsEditing) return setError(t('workflowEditUnsupported'))
     if (mode === 'edit' && references.length === 0) return setError(t('needReference'))
     // Landing rule: capture the active surface at request start. The user may
     // flip between preview and the infinite canvas while the request is in
@@ -875,7 +832,7 @@ export const StudioView: FC<{
                 ...(ref.file.name ? { name: ref.file.name } : {}),
               }
             }
-            throw new Error('无效参考图')
+            throw new Error('Invalid reference image')
           }))
         : undefined
 
@@ -962,7 +919,7 @@ export const StudioView: FC<{
           mode, provider, model: requestModel, prompt: prompt.trim(), ratio, quality: selectedQuality,
           ...(activeProfile.channel === undefined ? {} : { channel: activeProfile.channel }),
           ...(selectedResolution === undefined ? {} : { resolution: selectedResolution }),
-          ...(provider === 'openai-compat' ? { generationQuality: selectedGenerationQuality } : {}),
+          ...((provider as string) === 'openai-compat' ? { generationQuality: selectedGenerationQuality } : {}),
           ...(watermarkCapability.status === 'supported' ? { watermark } : {}),
           ...(count > 1 ? { count } : {}),
           ...(workspace?.path ? { workspaceRoot: workspace.path } : {}),
@@ -993,7 +950,7 @@ export const StudioView: FC<{
         aspectRatio: ratio,
         imageSize: selectedQuality,
         resolution: selectedResolution,
-        generationQuality: provider === 'openai-compat' ? selectedGenerationQuality : undefined,
+        generationQuality: (provider as string) === 'openai-compat' ? selectedGenerationQuality : undefined,
         watermark: watermarkCapability.status === 'supported' ? watermark : undefined,
         output: gen.output,
         ...(gen.savedTo ? { savedTo: gen.savedTo } : {}),
@@ -1405,11 +1362,7 @@ export const StudioView: FC<{
                 <div className="dsh-ig-status-badge">
                   <span className={`dsh-ig-status-dot ${configuredCount > 0 ? 'is-ready' : 'is-muted'}`} />
                   <span className="dsh-ig-status-text">
-                    {configuredCount > 0
-                      ? (subscriptionSignedInCount > 0
-                          ? t('configuredSplit', { api: String(apiConfiguredCount), sub: String(subscriptionSignedInCount) })
-                          : t('configuredCount', { count: String(apiConfiguredCount) }))
-                      : t('unconfiguredStatus')}
+                    {configuredCount > 0 ? t('workflowCount', { count: String(configuredCount) }) : t('noWorkflows')}
                   </span>
                   <ChevronDown size={11} className="dsh-ig-status-arrow" />
                 </div>
@@ -1418,15 +1371,13 @@ export const StudioView: FC<{
                     <div className="dsh-ig-status-popover-title">{t('providerStatus')}</div>
                     <ul className="dsh-ig-status-list">
                       {config.providers.map(p => (
-                        <li key={p.provider} className={p.configured ? 'is-configured' : 'is-missing'}>
+                        <li key={p.model} className={p.configured ? 'is-configured' : 'is-missing'}>
                           <div className="dsh-ig-status-item-name">
-                            <strong>{p.label}</strong>
-                            <small>{studioModelForMode(p, mode)}</small>
+                            <strong>{p.model}</strong>
+                            <small>{p.supportsEditing ? 'Text to image + editing' : 'Text to image'}</small>
                           </div>
                           <span className="dsh-ig-status-item-tag">
-                            {isSubscriptionProvider(p.provider)
-                              ? (p.configured ? t('subSignedIn') : t('subSignedOut'))
-                              : (p.configured ? t('configured') : t('unconfigured'))}
+                            {p.configured ? t('configured') : t('unconfigured')}
                           </span>
                         </li>
                       ))}
@@ -1604,7 +1555,7 @@ export const StudioView: FC<{
                 <button type="button" onClick={() => setShowDeleteModal(true)}><Trash2 size={15} /><span>{t('remove')}</span></button>
               </div>
             </div>
-            <div className="dsh-ig-result-meta"><span>{formatRelativeTime(selected.createdAt, lang)}</span><span>{selected.provider}</span><span>{selected.model}</span><span>{selected.provider === 'chatgpt-sub' ? selected.output : selected.attachment.width && selected.attachment.height ? `${selected.attachment.width} × ${selected.attachment.height}` : '—'}</span>{hasSubscriptionRatioMismatch(selected) && <span>{t('subscriptionRatioMismatch')}</span>}</div>
+            <div className="dsh-ig-result-meta"><span>{formatRelativeTime(selected.createdAt, lang)}</span><span>{selected.provider}</span><span>{selected.model}</span><span>{(selected.provider as string) === 'chatgpt-sub' ? selected.output : selected.attachment.width && selected.attachment.height ? `${selected.attachment.width} × ${selected.attachment.height}` : '—'}</span>{hasSubscriptionRatioMismatch(selected) && <span>{t('subscriptionRatioMismatch')}</span>}</div>
           </>}
         </main>
 
@@ -1748,23 +1699,16 @@ export const StudioView: FC<{
                   <p>{t('compareParameterHint')}</p>
                 </div>
                 <div className="dsh-ig-field-grid is-output-grid">
-                  <FieldSelect label={t('ratio')} value={ratio} onChange={setRatio} options={comparisonRatioOpts} />
-                  {comparisonResolutionOpts.length > 0 ? <FieldSelect label={lang === 'en' ? 'Resolution' : '分辨率'} value={comparisonResolution} onChange={setResolution} options={comparisonResolutionOpts} /> : null}
-                  {comparisonGenerationQualityOpts.length > 0 ? <FieldSelect label={lang === 'en' ? 'Generation quality' : '生成质量'} value={comparisonGenerationQuality} onChange={setGenerationQuality} options={comparisonGenerationQualityOpts} /> : null}
-                  <WatermarkControl capability={comparisonWatermarkCapability} value={watermark} onChange={setWatermark} lang={lang} />
+                  {comparisonRatioOpts.length > 0 ? <FieldSelect label={t('ratio')} value={ratio} onChange={setRatio} options={comparisonRatioOpts} /> : null}
+                  {comparisonResolutionOpts.length > 0 ? <FieldSelect label="Resolution" value={comparisonResolution} onChange={setResolution} options={comparisonResolutionOpts} /> : null}
+                  {comparisonGenerationQualityOpts.length > 0 ? <FieldSelect label="Quality" value={comparisonGenerationQuality} onChange={setGenerationQuality} options={comparisonGenerationQualityOpts} /> : null}
                 </div>
-                {comparisonWatermarkCapability.status === 'supported' ? <div className="dsh-ig-inline-note">{lang === 'en' ? 'Watermark applies only to models with confirmed support for this operation.' : '水印选项仅用于已确认支持当前操作的模型。'}</div> : null}
-                {comparisonTargets.some(target => target.profile.provider === 'chatgpt-sub') && <div className="dsh-ig-inline-note">{t('subscriptionParameterHint')}</div>}
+                {comparisonWatermarkCapability.status === 'supported' ? <div className="dsh-ig-inline-note">Watermark applies only to workflows with confirmed support for this operation.</div> : null}
               </> : <>
-                <div className="dsh-ig-field-grid"><FieldSelect label={t('provider')} value={studioTargetKey(provider, channel)} onChange={changeProfile} options={config.providers.map(item => ({ value: studioTargetKey(item.provider, item.channel), label: `${item.label}${item.configured ? '' : ` · ${t('unconfigured')}`}` }))} /><FieldSelect label={t('model')} value={requestModel} onChange={setModel} options={activeProfile === undefined ? [] : studioModelOptionsForMode(activeProfile, mode)} /></div>
-                <div className="dsh-ig-field-grid is-output-grid">
-                  <FieldSelect label={t('ratio')} value={ratio} onChange={setRatio} options={localizeRatioOptions(activeProfile?.ratioOptions ?? [], lang)} />
-                  {resolutionOpts.length > 0 ? <FieldSelect label={lang === 'en' ? 'Resolution' : '分辨率'} value={selectedResolution ?? ''} onChange={setResolution} options={resolutionOpts} /> : null}
-                  <FieldSelect label={['openai', 'chatgpt-sub', 'zhipu'].includes(provider) ? (lang === 'en' ? 'Generation quality' : '生成质量') : (lang === 'en' ? 'Resolution' : '分辨率')} value={selectedQuality} onChange={value => { setQuality(value); if (provider === 'openai') setGenerationQuality(value); else setResolution(value) }} options={provider === 'openai-compat' ? singleQualityOpts : localizeQualityOptions(singleQualityOpts, lang)} />
-                  {activeProfile?.generationQualityOptions ? <FieldSelect label={lang === 'en' ? 'Generation quality' : '生成质量'} value={selectedGenerationQuality} onChange={setGenerationQuality} options={localizeQualityOptions(activeProfile.generationQualityOptions, lang)} /> : null}
-                  <WatermarkControl capability={watermarkCapability} value={watermark} onChange={setWatermark} lang={lang} />
+                <div className="dsh-ig-field-grid">
+                  <FieldSelect label={t('workflow')} value={model} onChange={setModel} options={config.providers.map(item => ({ value: item.model, label: item.model }))} />
                 </div>
-                {provider === 'chatgpt-sub' && <div className="dsh-ig-inline-note">{t('subscriptionParameterHint')}</div>}
+                {activeProfile !== undefined && mode === 'edit' && !activeProfile.supportsEditing ? <div className="dsh-ig-inline-note">{t('workflowEditUnsupported')}</div> : null}
                 <div className="dsh-ig-field"><label>{t('count')}</label><div className="dsh-ig-count-row">{[1, 2, 3, 4].map(option => <button key={option} type="button" className={`dsh-ig-count-pill ${count === option ? 'is-active' : ''}`} onClick={() => setCount(option)}>{t('countUnit', { n: String(option) })}</button>)}</div></div>
               </>}
             </>}
@@ -2009,7 +1953,7 @@ const BatchCanvasItem: FC<{
 }
 
 function hasSubscriptionRatioMismatch(item: GalleryItem): boolean {
-  if (item.provider !== 'chatgpt-sub' || item.aspectRatio === 'auto') return false
+  if ((item.provider as string) !== 'chatgpt-sub' || item.aspectRatio === 'auto') return false
   const width = item.attachment.width
   const height = item.attachment.height
   if (width === undefined || height === undefined || width <= 0 || height <= 0) return false

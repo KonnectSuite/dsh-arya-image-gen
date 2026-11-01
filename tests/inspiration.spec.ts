@@ -118,24 +118,15 @@ describe('inspiration HTTP route', () => {
     expect(upstream.mock.calls[2]?.[0]).toBe('https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/c7d293963b21c60bf338003915438cc5c39dd3ca/data/images/case544.jpg')
   })
 
-  it('accepts a schema-valid manual refresh and publishes its immutable version', async () => {
-    const version = 'b'.repeat(40)
-    const upstream = vi.fn<typeof fetch>(async input => {
-      const url = String(input)
-      if (url.includes('/commits/main')) {
-        return new Response(JSON.stringify({ sha: version, commit: { author: { date: '2026-09-03T00:00:00.000Z' } } }), { status: 200 })
-      }
-      return new Response(JSON.stringify({
-        repository: 'https://github.com/freestylefly/awesome-gpt-image-2', categories: ['Art'], styles: ['Poster'], scenes: ['Creative'],
-        cases: [{ id: '900', title: 'Fresh case', image: '/images/case900.jpg', prompt: 'A newly refreshed prompt', category: 'Art', styles: ['Poster'], scenes: ['Creative'] }],
-      }), { status: 200 })
-    })
+  it('restores the bundled English catalog on a manual refresh', async () => {
+    const upstream = vi.fn<typeof fetch>(async () => new Response('{}', { status: 500 }))
     const url = await start(upstream)
     const response = await fetch(`${url}/refresh`, { method: 'POST', headers: { origin: url } })
     expect(response.status).toBe(200)
-    const catalog = await response.json() as { sources: Array<{ version: string; integritySha256?: string; updatedAt?: string; cases: unknown[] }> }
-    expect(catalog.sources[0]).toMatchObject({ version, updatedAt: '2026-09-03T00:00:00.000Z', cases: [{ id: '900' }] })
-    expect(catalog.sources[0]?.integritySha256).toMatch(/^[a-f0-9]{64}$/)
+    const catalog = await response.json() as { sources: Array<{ id: string; cases: unknown[] }> }
+    expect(catalog.sources[0]?.id).toBe('awesome-gpt-image-2')
+    expect(catalog.sources[0]?.cases.length).toBe(BUNDLED_INSPIRATION_CATALOG.sources[0]?.cases.length)
+    expect(upstream).not.toHaveBeenCalled()
   })
 
   it('serves from async disk cache on repeated requests without hitting upstream', async () => {
@@ -283,9 +274,13 @@ describe('resolveActiveCatalog cache arbitration', () => {
 
 describe('searchInspirationCases', () => {
   it('matches prompts, categories, and tags across both bundled libraries', () => {
-    const result = searchInspirationCases(BUNDLED_INSPIRATION_CATALOG, { query: '信息图', category: '排版 · 信息图' })
+    const layoutCategory = BUNDLED_INSPIRATION_CATALOG.sources
+      .flatMap(source => source.cases)
+      .find(item => item.category.startsWith('Layout · '))?.category
+    expect(layoutCategory).toBeDefined()
+    const result = searchInspirationCases(BUNDLED_INSPIRATION_CATALOG, { query: '', category: layoutCategory! })
     expect(result.total).toBeGreaterThan(0)
-    for (const hit of result.hits) expect(hit.category).toBe('排版 · 信息图')
+    for (const hit of result.hits) expect(hit.category).toBe(layoutCategory)
     const english = searchInspirationCases(BUNDLED_INSPIRATION_CATALOG, { query: 'logo' })
     expect(english.total).toBeGreaterThan(0)
     expect(english.hits.some(hit => hit.sourceId === 'awesome-gpt-image-2')).toBe(true)

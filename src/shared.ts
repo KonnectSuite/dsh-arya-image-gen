@@ -1,4 +1,4 @@
-/** Values shared by the Host and browser Bundle faces. */
+/** Values shared by the Host and browser Bundle faces. ComfyUI-only build. */
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 
 /** Browser route used by the generated-image card. */
@@ -13,8 +13,8 @@ export const STUDIO_ROUTE = '/plugins/dsh-image-gen/studio'
 export const INSPIRATION_ROUTE = '/plugins/dsh-image-gen/inspiration'
 /** Browser route used for saving generated images to workspace on demand. */
 export const SAVE_WORKSPACE_ROUTE = '/plugins/dsh-image-gen/save-workspace'
-/** Browser route the settings card probes provider connectivity through. */
-export const TEST_CONNECTION_ROUTE = '/plugins/dsh-image-gen/test'
+/** Same-origin route that starts, stops, restarts, and probes the local ComfyUI server. */
+export const COMFYUI_SERVER_ROUTE = '/plugins/dsh-image-gen/comfyui-server'
 /** Non-secret settings capability probe, available even when the host cannot serve a form. */
 export const SETTINGS_HEALTH_ROUTE = '/plugins/dsh-image-gen/settings-health'
 
@@ -26,8 +26,6 @@ export interface SettingsHealth {
 export const CANVAS_STATE_ROUTE = '/plugins/dsh-image-gen/canvas-state'
 /** Upload a selected canvas original to the host attachment store. */
 export const CANVAS_ASSET_ROUTE = '/plugins/dsh-image-gen/canvas-asset'
-export const SUBSCRIPTION_LOGIN_ROUTE = '/plugins/dsh-image-gen/subscription-login'
-export const SUBSCRIPTION_STATUS_ROUTE = '/plugins/dsh-image-gen/subscription-status'
 
 /** Coarse model-facing kind of one shape on the workbench infinite canvas. */
 export type CanvasNodeKind = 'image' | 'draw' | 'text' | 'note' | 'geo' | 'arrow' | 'frame' | 'other'
@@ -80,9 +78,9 @@ export interface CanvasNodeSummary {
    * reproduce or precisely vary a canvas image instead of guessing from pixels.
    */
   prompt?: string
-  /** Provider id (e.g. "google") the landed image was generated with. */
+  /** Provider id (always "comfyui" in this build) the landed image was generated with. */
   provider?: string
-  /** Model (or ComfyUI workflow label) the landed image was generated with. */
+  /** ComfyUI workflow label the landed image was generated with. */
   model?: string
 }
 
@@ -140,284 +138,95 @@ export const IMAGE_GENERATION_NAMESPACE = 'image-generation'
  */
 export const IMAGE_GENERATION_ENTRY_ID = 'image-gen'
 
-/** Supported providers. */
-export const IMAGE_PROVIDERS = ['google', 'openai', 'openai-compat', 'seedream', 'dashscope', 'xai', 'zhipu', 'comfyui', 'chatgpt-sub', 'grok-sub', 'google-sub'] as const
+/** Supported providers. This fork is ComfyUI-only. */
+export const IMAGE_PROVIDERS = ['comfyui'] as const
 export type ImageProvider = typeof IMAGE_PROVIDERS[number]
 
-/**
- * Providers that generate through a logged-in subscription account instead
- * of an API key. They use no credential reference and never join the
- * cloud/BYOK sets.
- */
-export const SUBSCRIPTION_PROVIDERS = ['chatgpt-sub', 'grok-sub', 'google-sub'] as const
-export type SubscriptionProvider = typeof SUBSCRIPTION_PROVIDERS[number]
-
-/** True when the provider generates through a logged-in subscription account. */
-export function isSubscriptionProvider(provider: ImageProvider): provider is SubscriptionProvider {
-  return (SUBSCRIPTION_PROVIDERS as readonly string[]).includes(provider)
-}
-
-/** Providers supported by the first browser workbench release. */
-export const CLOUD_IMAGE_PROVIDERS = ['google', 'openai', 'openai-compat', 'seedream', 'dashscope', 'xai', 'zhipu'] as const
-export type CloudImageProvider = typeof CLOUD_IMAGE_PROVIDERS[number]
-
-/** Normalize the relay model list while keeping the legacy default model selectable. */
-export function resolveOpenAICompatModels(config: {
-  openaiCompatModel?: string
-  openaiCompatModels?: readonly string[]
-}): string[] {
-  const defaultModel = config.openaiCompatModel?.trim() ?? ''
-  const models = [...new Set((config.openaiCompatModels ?? []).map(model => model.trim()).filter(Boolean))]
-  if (defaultModel.length > 0 && !models.includes(defaultModel)) models.unshift(defaultModel)
-  return models
-}
-
-export const DEFAULT_OPENAI_COMPAT_CHANNEL_ID = 'default'
-
-export interface OpenAICompatChannel {
-  id: string
-  label: string
-  keyRef: string
-  baseURL: string
-  model: string
-  models?: string[]
-  editModel?: string
-  quality?: string
-  qualityOptions?: string[]
-  extraBody?: Record<string, unknown>
-  editSizeMode?: 'auto' | 'selected'
-  editFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson'
-  editExtra?: Record<string, unknown>
-  sizes?: Record<string, Record<string, string>>
-}
-
-export interface OpenAICompatChannelSource {
-  openaiCompatLabel?: string
-  openaiCompatBaseURL?: string
-  openaiCompatModel?: string
-  openaiCompatModels?: readonly string[]
-  openaiCompatEditModel?: string
-  openaiCompatQuality?: string
-  openaiCompatQualityOptions?: readonly string[]
-  openaiCompatExtraBody?: Record<string, unknown>
-  openaiCompatEditSizeMode?: 'auto' | 'selected'
-  openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson'
-  openaiCompatEditExtra?: Record<string, unknown>
-  openaiCompatSizes?: Record<string, Record<string, string>>
-  openaiCompatChannels?: readonly OpenAICompatChannel[]
-  openaiCompatActiveChannel?: string
-}
-
-export function openAICompatKeyRef(channelId: string): string {
-  return channelId === DEFAULT_OPENAI_COMPAT_CHANNEL_ID
-    ? OPENAI_COMPAT_API_KEY_ENV
-    : `${OPENAI_COMPAT_API_KEY_ENV}_${channelId.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}`
-}
-
-/** The legacy flat fields remain the first channel; additional entries are fully independent. */
-export function resolveOpenAICompatChannels(source: OpenAICompatChannelSource): OpenAICompatChannel[] {
-  const legacy: OpenAICompatChannel = {
-    id: DEFAULT_OPENAI_COMPAT_CHANNEL_ID,
-    label: source.openaiCompatLabel?.trim() || 'OpenAI 兼容',
-    keyRef: OPENAI_COMPAT_API_KEY_ENV,
-    baseURL: source.openaiCompatBaseURL ?? '',
-    model: source.openaiCompatModel ?? '',
-    models: [...source.openaiCompatModels ?? []],
-    editModel: source.openaiCompatEditModel ?? '',
-    quality: source.openaiCompatQuality ?? '',
-    qualityOptions: [...source.openaiCompatQualityOptions ?? []],
-    extraBody: source.openaiCompatExtraBody ?? {},
-    editSizeMode: source.openaiCompatEditSizeMode ?? 'auto',
-    editFormat: source.openaiCompatEditFormat ?? 'multipart',
-    editExtra: source.openaiCompatEditExtra ?? {},
-    sizes: source.openaiCompatSizes ?? {},
-  }
-  const channels = [legacy]
-  const seen = new Set([legacy.id])
-  for (const [index, entry] of (source.openaiCompatChannels ?? []).entries()) {
-    const id = typeof entry?.id === 'string' ? entry.id.trim() : ''
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id) || seen.has(id)) continue
-    seen.add(id)
-    const storedKeyRef = typeof entry.keyRef === 'string' ? entry.keyRef.trim() : ''
-    channels.push({
-      id,
-      label: typeof entry.label === 'string' && entry.label.trim().length > 0 ? entry.label.trim() : `OpenAI 兼容 ${index + 2}`,
-      keyRef: /^DSH_IMAGE_GEN_OPENAI_COMPAT_KEY_[A-Z0-9_]+$/.test(storedKeyRef) ? storedKeyRef : openAICompatKeyRef(id),
-      baseURL: typeof entry.baseURL === 'string' ? entry.baseURL : '',
-      model: typeof entry.model === 'string' ? entry.model : '',
-      models: Array.isArray(entry.models) ? entry.models.filter((model): model is string => typeof model === 'string') : [],
-      editModel: typeof entry.editModel === 'string' ? entry.editModel : '',
-      quality: typeof entry.quality === 'string' ? entry.quality : '',
-      qualityOptions: Array.isArray(entry.qualityOptions) ? entry.qualityOptions.filter((quality): quality is string => typeof quality === 'string') : [],
-      extraBody: entry.extraBody ?? {},
-      editSizeMode: entry.editSizeMode === 'selected' ? 'selected' : 'auto',
-      editFormat: entry.editFormat ?? 'multipart',
-      editExtra: entry.editExtra ?? {},
-      sizes: entry.sizes ?? {},
-    })
-  }
-  return channels
-}
-
-export function resolveOpenAICompatChannel(source: OpenAICompatChannelSource, channelId?: string): OpenAICompatChannel {
-  const channels = resolveOpenAICompatChannels(source)
-  const explicit = channelId?.trim() ?? ''
-  if (explicit.length > 0) {
-    const selected = channels.find(channel => channel.id === explicit)
-    if (selected === undefined) throw new Error(`Unknown OpenAI-compatible channel "${explicit}". Available channels: ${channels.map(channel => channel.id).join(', ')}.`)
-    return selected
-  }
-  const active = source.openaiCompatActiveChannel?.trim() ?? ''
-  return channels.find(channel => channel.id === active) ?? channels[0]!
-}
-
-/**
- * Providers the browser workbench can drive: the BYOK cloud set plus the
- * logged-in subscription channels. ComfyUI stays out; it has its own workflow
- * pipeline and no shared request shape.
- */
-export const STUDIO_PROVIDERS = [...CLOUD_IMAGE_PROVIDERS, ...SUBSCRIPTION_PROVIDERS] as const
-export type StudioProvider = CloudImageProvider | SubscriptionProvider
-
-export function studioTargetKey(provider: StudioProvider, channel?: string): string {
-  return channel === undefined ? provider : `${provider}:${channel}`
-}
+/** Providers the browser workbench can drive: ComfyUI workflows. */
+export const STUDIO_PROVIDERS = IMAGE_PROVIDERS
+export type StudioProvider = ImageProvider
 
 /** True when the provider is selectable in the browser workbench. */
 export function isStudioProvider(provider: ImageProvider): provider is StudioProvider {
   return (STUDIO_PROVIDERS as readonly string[]).includes(provider)
 }
 
-/** Default timeout for API-key cloud generation in the browser workbench. */
-export const DEFAULT_CLOUD_TIMEOUT_MS = 150_000
-
-/** Timeout for one subscription image call, shared by the tool path and the
- * studio route so neither drifts from the other. */
-export const SUBSCRIPTION_TIMEOUT_MS = 300_000
-
-/**
- * Credential references resolved through the DSH Credentials service (BYOK).
- * These are POSIX-style reference names, not environment variables: the host
- * layers the process environment and its managed store behind them, so a name
- * like OPENAI_API_KEY is shared with any other plugin resolving the same ref.
- */
-export const GOOGLE_API_KEY_ENV = 'GEMINI_API_KEY'
-/** OpenAI Platform credential reference. */
-export const OPENAI_API_KEY_ENV = 'OPENAI_API_KEY'
-/**
- * OpenAI-compatible relay credential reference. Deliberately distinct from
- * OPENAI_API_KEY so an official key and a relay key can coexist without
- * overwriting each other.
- */
-export const OPENAI_COMPAT_API_KEY_ENV = 'DSH_IMAGE_GEN_OPENAI_COMPAT_KEY'
-/** Volcengine Ark credential reference. */
-export const SEEDREAM_API_KEY_ENV = 'ARK_API_KEY'
-/** DashScope credential reference. */
-export const DASHSCOPE_API_KEY_ENV = 'DASHSCOPE_API_KEY'
-/** xAI credential reference; matches the official xAI SDK environment name. */
-export const XAI_API_KEY_ENV = 'XAI_API_KEY'
-/** Zhipu credential reference; matches the official Zhipu SDK environment name. */
-export const ZHIPU_API_KEY_ENV = 'ZHIPUAI_API_KEY'
-
-/** The credential reference each cloud provider's API key is stored under. */
-export const CLOUD_CREDENTIAL_REFS: Record<CloudImageProvider, string> = {
-  google: GOOGLE_API_KEY_ENV,
-  openai: OPENAI_API_KEY_ENV,
-  'openai-compat': OPENAI_COMPAT_API_KEY_ENV,
-  seedream: SEEDREAM_API_KEY_ENV,
-  dashscope: DASHSCOPE_API_KEY_ENV,
-  xai: XAI_API_KEY_ENV,
-  zhipu: ZHIPU_API_KEY_ENV,
-}
-
-/** The credential reference storing this provider's API key, when it uses one. */
-export function cloudCredentialRef(provider: ImageProvider): string | undefined {
-  return (CLOUD_IMAGE_PROVIDERS as readonly string[]).includes(provider)
-    ? CLOUD_CREDENTIAL_REFS[provider as CloudImageProvider]
-    : undefined
-}
-
-/** Locale-neutral provider names for user-facing errors and status lines. */
+/** Display name of the one provider, for status lines and provenance. */
 export const PROVIDER_DISPLAY_NAMES: Record<ImageProvider, string> = {
-  google: 'Google Gemini',
-  openai: 'OpenAI',
-  'openai-compat': 'OpenAI 兼容',
-  seedream: 'Seedream',
-  dashscope: 'DashScope',
-  xai: 'xAI Grok',
-  zhipu: '智谱 GLM',
   comfyui: 'ComfyUI',
-  'chatgpt-sub': 'ChatGPT 订阅',
-  'grok-sub': 'Grok 订阅',
-  'google-sub': 'Google 订阅',
 }
 
-/** Display names for the subscription providers, separate from the BYOK table. */
-export const SUBSCRIPTION_PROVIDER_DISPLAY_NAMES: Record<SubscriptionProvider, string> = {
-  'chatgpt-sub': 'ChatGPT 订阅',
-  'grok-sub': 'Grok 订阅',
-  'google-sub': 'Google 订阅',
-}
-
-/** One selectable output option exposed by a provider profile. */
+/** One selectable option exposed by a provider profile. */
 export interface StudioOption {
   value: string
   label: string
 }
 
-export const STUDIO_WATERMARK_VALUES = ['default', 'off', 'on'] as const
-export type StudioWatermark = typeof STUDIO_WATERMARK_VALUES[number]
-
-export interface StudioWatermarkCapability {
-  status: 'supported' | 'unknown' | 'unavailable'
-  reason?: 'channel-unconfirmed' | 'model-unconfirmed' | 'account-unconfirmed' | 'edit-format' | 'no-api-control'
-}
-
-/** Browser-safe provider description. Credentials and endpoints never cross this boundary. */
+/**
+ * Browser-safe workbench profile. One profile is emitted per imported ComfyUI
+ * workflow: `model` carries the workflow name, so the model picker doubles as
+ * the workflow picker. Ratio/quality pickers stay empty — the workflow itself
+ * defines the canvas size — and the client hides those selects when the option
+ * lists are empty.
+ */
 export interface StudioProviderProfile {
   provider: StudioProvider
-  /** OpenAI-compatible channel id; absent for every other provider. */
-  channel?: string
   label: string
+  /** Workflow name this profile runs. */
   model: string
-  /** Separate configured edit model; absent preserves the generation model. */
-  editModel?: string
-  /** Selectable generation models; absent means the single default model. */
-  modelOptions?: StudioOption[]
+  /** All imported workflows; the model picker lists them. */
+  modelOptions: StudioOption[]
   configured: boolean
   supportsEditing: boolean
   ratioOptions: StudioOption[]
   qualityOptions: StudioOption[]
   defaultRatio: string
   defaultQuality: string
-  /** Independent pixel tiers for OpenAI-shaped APIs, keyed by ratio. */
-  resolutionOptions?: Record<string, StudioOption[]>
+  /** Compatibility fields: ComfyUI profiles never carry these values. */
+  channel?: string
+  editModel?: string
   defaultResolution?: string
-  /** Additional quality picker for compatible channels whose legacy quality means resolution. */
-  generationQualityOptions?: StudioOption[]
   defaultGenerationQuality?: string
-  /** Generation options retained for clients predating operation-specific capabilities. */
-  watermarkOptions?: StudioOption[]
-  watermarkCapabilities?: Record<'generate' | 'edit', StudioWatermarkCapability>
+  resolutionOptions?: Record<string, StudioOption[]>
+  generationQualityOptions?: StudioOption[]
 }
 
-/** A model picker/request must use the same operation-specific default. */
-export function studioModelForMode(profile: StudioProviderProfile, mode: 'generate' | 'edit'): string {
-  return mode === 'edit' ? profile.editModel ?? profile.model : profile.model
+export function studioModelOptionsForMode(profile: StudioProviderProfile, _mode?: 'generate' | 'edit'): StudioOption[] {
+  return profile.modelOptions.length > 0 ? profile.modelOptions : [{ value: profile.model, label: profile.model }]
 }
 
-export function studioModelOptionsForMode(profile: StudioProviderProfile, mode: 'generate' | 'edit'): StudioOption[] {
-  if (mode === 'edit' && profile.editModel !== undefined) {
-    return [{ value: profile.editModel, label: profile.editModel }]
-  }
-  return profile.modelOptions ?? [{ value: profile.model, label: profile.model }]
+/** The workflow a profile runs in either mode; ComfyUI has one model per workflow. */
+export function studioModelForMode(profile: StudioProviderProfile, _mode?: 'generate' | 'edit'): string {
+  return profile.model
 }
 
-export function studioWatermarkCapability(profile: StudioProviderProfile | undefined, mode: 'generate' | 'edit'): StudioWatermarkCapability {
-  return profile?.watermarkCapabilities?.[mode]
-    ?? (mode === 'generate' && profile?.watermarkOptions?.length
-      ? { status: 'supported' } : { status: 'unknown', reason: 'channel-unconfirmed' })
+/** Identifier for one workbench target; ComfyUI registers one row per workflow. */
+export function studioTargetKey(provider: string, channel?: string): string {
+  return channel === undefined || channel.length === 0 ? provider : `${provider}:${channel}`
 }
+
+/** ComfyUI has no subscription channels. */
+export function isSubscriptionProvider(_provider: string): boolean {
+  return false
+}
+
+/** How a mode's watermark control should render; ComfyUI never offers one. */
+export type StudioWatermark = 'default' | 'on' | 'off' | 'auto'
+
+export const STUDIO_WATERMARK_VALUES: readonly StudioWatermark[] = ['default', 'on', 'off', 'auto']
+
+export interface WatermarkCapability {
+  status: 'supported' | 'unsupported' | 'unknown'
+  values?: readonly StudioWatermark[]
+}
+
+/** ComfyUI workflows embed no watermark parameter, so the control stays hidden. */
+export function studioWatermarkCapability(_profile?: StudioProviderProfile, _mode?: 'generate' | 'edit'): WatermarkCapability {
+  return { status: 'unsupported' }
+}
+
+/** Upstream default quality value used by compatibility pickers. */
+export const PROVIDER_DEFAULT_QUALITY = 'auto'
 
 /** Lightweight workspace description exposed to the client for scoping. */
 export interface StudioWorkspaceInfo {
@@ -427,11 +236,12 @@ export interface StudioWorkspaceInfo {
   sessionIds: string[]
 }
 
-/** Read model and capability state for the workbench without exposing secrets. */
+/** Read capability state for the workbench without exposing secrets. */
 export interface StudioConfigResponse {
   providers: StudioProviderProfile[]
   activeProvider: StudioProvider
-  activeChannel?: string
+  /** Workflow the workbench preselects. */
+  activeWorkflow?: string
   workspaceRoot?: string | undefined
   workspaces?: StudioWorkspaceInfo[] | undefined
 }
@@ -454,19 +264,20 @@ export type StudioReference = StudioEncodedReference | StudioAttachmentReference
 export interface StudioGenerateRequest {
   mode: 'generate' | 'edit'
   provider: StudioProvider
-  channel?: string
+  /** Workflow name to run; must be one of the profile's modelOptions. */
   model: string
   prompt: string
-  ratio: string
-  quality: string
-  /** Optional independent resolution; older clients continue using the legacy quality field. */
-  resolution?: string
-  generationQuality?: string
-  watermark?: StudioWatermark
   reference?: StudioReference
   references?: StudioReference[]
   count?: number | undefined
   workspaceRoot?: string | undefined
+  /** Compatibility fields accepted from older clients and ignored by ComfyUI. */
+  channel?: string
+  ratio?: string
+  quality?: string
+  resolution?: string
+  generationQuality?: string
+  watermark?: StudioWatermark
 }
 
 /** One individual generated image item in a workbench batch. */
@@ -474,12 +285,12 @@ export interface StudioGeneratedItem {
   attachment: ImageAttachmentRef
   output: string
   savedTo?: string | undefined
+  seed?: number
 }
 
 /** One completed workbench request. */
 export interface StudioGenerateResponse extends StudioGeneratedItem {
   provider: StudioProvider
-  channel?: string
   model: string
   prompt: string
   createdAt: number
@@ -488,77 +299,20 @@ export interface StudioGenerateResponse extends StudioGeneratedItem {
   requestedCount?: number | undefined
   failedCount?: number | undefined
   errors?: Array<{ index: number; message: string }> | undefined
+  /** Compatibility field; ComfyUI runs no named channel. */
+  channel?: string
 }
 
 /** Default endpoints and base URLs. */
-export const DEFAULT_GOOGLE_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions'
-export const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
-export const DEFAULT_SEEDREAM_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
-export const DEFAULT_DASHSCOPE_ENDPOINT = 'https://dashscope.aliyuncs.com/api/v1'
-export const DEFAULT_XAI_BASE_URL = 'https://api.x.ai/v1'
-export const DEFAULT_ZHIPU_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 export const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188'
 export const DEFAULT_COMFYUI_TIMEOUT_MS = 300_000
 export const DEFAULT_COMFYUI_WORKFLOW_LABEL = 'API workflow'
 export const MAX_COMFYUI_WORKFLOW_BYTES = 5 * 1024 * 1024
 
-/** Content types Ark's Seedream endpoint can return. */
-export const ARK_OUTPUT_FORMATS = ['png', 'jpeg'] as const
-/** Whether Ark stamps an "AI generated" watermark on the result. */
-export const ARK_BACKGROUND_MODES = ['opaque', 'transparent'] as const
-export type ArkOutputFormat = typeof ARK_OUTPUT_FORMATS[number]
-export type ArkBackgroundMode = typeof ARK_BACKGROUND_MODES[number]
-
-/**
- * Ark (Seedream) output controls, shared by the generate and edit paths.
- *
- * Every field mirrors an Ark request-body field of the same meaning, and every
- * default below reproduces Ark's own default — so an untouched configuration
- * sends exactly what it sent before these options existed.
- */
-export interface ArkOutputOptions {
-  /** `output_format`. Ark defaults to `jpeg`; `png` is lossless and keeps an alpha channel. */
-  outputFormat?: ArkOutputFormat
-  /** `watermark`. Ark defaults to `true`, which bakes an "AI generated" mark into the image. */
-  watermark?: boolean
-  /** `background`. Ark defaults to `opaque`. */
-  background?: ArkBackgroundMode
-}
-
-/**
- * Map the Ark output controls onto request-body fields.
- *
- * `background` is opt-in per call site because Ark restricts `transparent` to
- * image-to-image with a single alpha-bearing reference and rejects the whole
- * request otherwise:
- *
- *   text-to-image + transparent → 400 InvalidParameter
- *     "transparent background requires exactly one input image"
- *
- * So the generation endpoint must never carry it, and that caller passes
- * `{ background: false }`. `background: opaque` is never emitted anywhere: it
- * is already Ark's default, so sending it would change nothing while adding a
- * field only the edit path can act on.
- */
-export function arkOutputBody(
-  options: ArkOutputOptions | undefined,
-  { background = true }: { background?: boolean } = {},
-): Record<string, unknown> {
-  if (options === undefined) return {}
-  const body: Record<string, unknown> = {}
-  if (options.outputFormat !== undefined) body.output_format = options.outputFormat
-  if (options.watermark !== undefined) body.watermark = options.watermark
-  if (background && options.background === 'transparent') body.background = 'transparent'
-  return body
-}
-
-/** Default model names. */
-export const DEFAULT_GOOGLE_MODEL = 'gemini-3.1-flash-image'
-export const DEFAULT_OPENAI_MODEL = 'gpt-image-2'
-export const DEFAULT_SEEDREAM_MODEL = 'doubao-seedream-5-0-260128'
-export const DEFAULT_DASHSCOPE_MODEL = 'qwen-image-3.0'
-export const DEFAULT_XAI_MODEL = 'grok-imagine-image'
-export const DEFAULT_ZHIPU_MODEL = 'glm-image'
+/** Default process-launch values matching the Comfy-Desktop install layout. */
+export const DEFAULT_COMFYUI_PYTHON_EXE = 'C:\\Users\\KNPhu\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Installs\\ComfyUI\\ComfyUI\\.venv\\Scripts\\python.exe'
+export const DEFAULT_COMFYUI_SERVER_DIR = 'C:\\Users\\KNPhu\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Installs\\ComfyUI\\ComfyUI'
+export const DEFAULT_COMFYUI_EXTRA_ARGS = '--listen 127.0.0.1 --disable-auto-launch'
 
 /** One named ComfyUI API-format workflow imported through settings. */
 export interface ComfyUIWorkflowEntry {
@@ -630,40 +384,30 @@ export function mergeComfyUIPrompt(preset: string | undefined, user: string): st
   return `${presetText}, ${userText}`
 }
 
-/** Default models for the subscription channels; fixed by the bridge protocol. */
-export const DEFAULT_SUBSCRIPTION_MODELS: Record<SubscriptionProvider, string> = {
-  'chatgpt-sub': 'gpt-image-2.5-flare',
-  'grok-sub': 'grok-imagine-image-2.0',
-  'google-sub': 'gemini-3.1-flash-image',
+/** Local ComfyUI server lifecycle state, surfaced through the server route. */
+export interface ComfyUIServerStatus {
+  /** Up when /system_stats answered; independent of who launched the process. */
+  up: boolean
+  /** True when this plugin process launched (and can stop) the server. */
+  managed: boolean
+  /** Python PIDs whose command line runs ComfyUI main.py on the configured port. */
+  pids: number[]
+  /** ComfyUI version reported by /system_stats, when up. */
+  version?: string
+  pythonVersion?: string
+  /** First device line, e.g. "cuda:0 (NVIDIA GeForce RTX 4090)". */
+  device?: string
+  vramFreeBytes?: number
+  vramTotalBytes?: number
+  baseUrl: string
+  /** True while a start/stop transition is in flight. */
+  busy: boolean
 }
 
 export const DEFAULT_MODELS: Record<ImageProvider, string> = {
-  google: DEFAULT_GOOGLE_MODEL,
-  openai: DEFAULT_OPENAI_MODEL,
-  // Relays expose arbitrary model ids; there is no sensible default to offer.
-  'openai-compat': '',
-  seedream: DEFAULT_SEEDREAM_MODEL,
-  dashscope: DEFAULT_DASHSCOPE_MODEL,
-  xai: DEFAULT_XAI_MODEL,
-  zhipu: DEFAULT_ZHIPU_MODEL,
   comfyui: DEFAULT_COMFYUI_WORKFLOW_LABEL,
-  'chatgpt-sub': DEFAULT_SUBSCRIPTION_MODELS['chatgpt-sub'],
-  'grok-sub': DEFAULT_SUBSCRIPTION_MODELS['grok-sub'],
-  'google-sub': DEFAULT_SUBSCRIPTION_MODELS['google-sub'],
 }
 
 export const DEFAULT_BASE_URLS: Record<ImageProvider, string> = {
-  google: DEFAULT_GOOGLE_ENDPOINT,
-  openai: DEFAULT_OPENAI_BASE_URL,
-  // Relay addresses are user-specific; empty until the compat row is filled in.
-  'openai-compat': '',
-  seedream: DEFAULT_SEEDREAM_BASE_URL,
-  dashscope: DEFAULT_DASHSCOPE_ENDPOINT,
-  xai: DEFAULT_XAI_BASE_URL,
-  zhipu: DEFAULT_ZHIPU_BASE_URL,
   comfyui: DEFAULT_COMFYUI_BASE_URL,
-  // Subscription channels call an in-process service, never a URL.
-  'chatgpt-sub': '',
-  'grok-sub': '',
-  'google-sub': '',
 }

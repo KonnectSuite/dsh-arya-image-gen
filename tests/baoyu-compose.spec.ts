@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   BAOYU_DEFAULT_SELECTION,
-  BAOYU_LABELS_ZH,
   BAOYU_MOODS,
   BAOYU_PALETTES,
   BAOYU_RENDERINGS,
@@ -24,11 +23,11 @@ describe('baoyu dimension data', () => {
     expect(BAOYU_MOODS.map(item => item.id)).toEqual(['subtle', 'balanced', 'bold'])
   })
 
-  it('labels every option id in Chinese', () => {
+  it('exposes English dimension ids', () => {
     const ids = [
       ...BAOYU_TYPES, ...BAOYU_PALETTES, ...BAOYU_RENDERINGS, ...BAOYU_TEXT_LEVELS, ...BAOYU_MOODS,
     ].map(item => item.id)
-    expect(ids.every(id => BAOYU_LABELS_ZH[id] !== undefined)).toBe(true)
+    expect(ids.every(id => /^[a-z0-9-]+$/.test(id))).toBe(true)
   })
 })
 

@@ -63,15 +63,6 @@ export const BAOYU_RENDERINGS: BaoyuRendering[] = data.renderings
 export const BAOYU_TEXT_LEVELS: BaoyuTextLevel[] = data.textLevels
 export const BAOYU_MOODS: BaoyuMood[] = data.moods
 
-/** Chinese labels for every dimension option id, shown when the UI language is zh. */
-export const BAOYU_LABELS_ZH: Record<string, string> = {
-  hero: '主视觉大图', conceptual: '概念抽象', typography: '文字主导', metaphor: '隐喻象征', scene: '氛围场景', minimal: '极简留白',
-  warm: '暖色', cool: '冷色', dark: '暗色', earth: '大地色', elegant: '优雅', macaron: '马卡龙', mono: '单色', pastel: '粉彩', retro: '复古', duotone: '双色调', vivid: '高饱和',
-  'flat-vector': '扁平矢量', pixel: '像素风', digital: '数字插画', 'hand-drawn': '手绘', painterly: '绘画感', chalk: '粉笔', 'screen-print': '丝网印刷',
-  none: '无文字', 'title-only': '仅标题', 'title-subtitle': '标题+副标题', 'text-rich': '丰富文字',
-  subtle: '含蓄', balanced: '均衡', bold: '强烈',
-}
-
 export const BAOYU_DEFAULT_SELECTION: BaoyuSelection = {
   type: 'metaphor',
   palette: 'warm',

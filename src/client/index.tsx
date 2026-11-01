@@ -1,8 +1,7 @@
 // Must stay the first import: it shims CSS.supports before tldraw's
 // module-scope environment probe runs (#40); see css-supports-shim.ts.
 import './tl/css-supports-shim.js'
-import { compatEditFormat } from '../watermark.js'
-import { useEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { fetchSettingsHealth, settingsState, type SettingsScopeSnapshot, type SettingsState } from './settings-state.js'
@@ -20,36 +19,24 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import {
-  CLOUD_CREDENTIAL_REFS,
-  CLOUD_IMAGE_PROVIDERS,
-  DEFAULT_BASE_URLS,
-  DEFAULT_CLOUD_TIMEOUT_MS,
+  COMFYUI_SERVER_ROUTE,
+  DEFAULT_COMFYUI_BASE_URL,
+  DEFAULT_COMFYUI_EXTRA_ARGS,
+  DEFAULT_COMFYUI_PYTHON_EXE,
+  DEFAULT_COMFYUI_SERVER_DIR,
   DEFAULT_COMFYUI_TIMEOUT_MS,
-  DEFAULT_MODELS,
   IMAGE_GENERATION_ENTRY_ID,
   IMAGE_GENERATION_NAMESPACE,
-  IMAGE_PROVIDERS,
   IMAGE_ROUTE,
   MAX_COMFYUI_WORKFLOW_BYTES,
   STUDIO_ROUTE,
-  SUBSCRIPTION_LOGIN_ROUTE,
-  SUBSCRIPTION_PROVIDERS,
-  SUBSCRIPTION_STATUS_ROUTE,
-  TEST_CONNECTION_ROUTE,
   activeComfyUIWorkflow,
-  cloudCredentialRef,
-  isSubscriptionProvider,
-  openAICompatKeyRef,
   resolveComfyUIWorkflows,
-  resolveOpenAICompatChannels,
-  resolveOpenAICompatModels,
   uniqueComfyUIWorkflowName,
-  type CloudImageProvider,
+  type ComfyUIServerStatus,
   type ComfyUIWorkflowEntry,
-  type OpenAICompatChannel,
   type ImageProvider,
   type StudioGenerateResponse,
-  type SubscriptionProvider,
 } from '../shared.js'
 import { validateComfyUIWorkflowJson } from '../comfyui-workflow.js'
 import { saveGalleryItem } from './gallery-store.js'
@@ -75,8 +62,6 @@ import {
   type ConversationImageRevisionChain,
 } from './conversation-image-revisions.js'
 import { conversationRegenerateRequest } from './conversation-regenerate.js'
-import { parseExtraFields, parseSizeTable } from './output-settings.js'
-import { DEFAULT_COMPAT_QUALITIES, validateOfficialSize } from '../openai-output.js'
 import { ImageProviderPill, PROVIDER_PILL_STYLE, type ProviderPillFace } from './provider-pill.js'
 import { writeSetting } from './settings-write.js'
 
@@ -90,58 +75,7 @@ if (typeof __CANVAS_BUILD_TS__ !== 'undefined') {
   console.info(`[dsh-image-gen] canvas bundle ${__CANVAS_BUILD_TS__}`)
 }
 
-type Provider = ImageProvider
-type ProviderRowTarget = Provider | `openai-compat:${string}`
-type ProviderRows = Record<ProviderRowTarget, ProviderRowState>
-interface ImageSettings {
-  provider?: Provider
-  cloudTimeoutMs?: number
-  googleModel?: string
-  googleEndpoint?: string
-  googleNative?: boolean
-  openaiBaseURL?: string
-  openaiModel?: string
-  openaiSizes?: Record<string, Record<string, string>>
-  openaiCompatLabel?: string
-  openaiCompatBaseURL?: string
-  openaiCompatModel?: string
-  openaiCompatModels?: string[]
-  openaiCompatChannels?: OpenAICompatChannel[]
-  openaiCompatActiveChannel?: string
-  openaiCompatEditModel?: string
-  openaiCompatSizes?: Record<string, Record<string, string>>
-  openaiCompatQuality?: string
-  openaiCompatQualityOptions?: string[]
-  openaiCompatExtraBody?: Record<string, unknown>
-  openaiCompatEditSizeMode?: 'auto' | 'selected'
-  /** Edit-request shape for the openai-compat relay (#41); see src/config.ts. */
-  openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson'
-  /** Extra JSON fields merged into the JSON edit body; ignored in multipart mode. */
-  openaiCompatEditExtra?: Record<string, unknown>
-  seedreamBaseURL?: string
-  seedreamModel?: string
-  /** Ark `output_format`; `png` is lossless and keeps an alpha channel. */
-  seedreamOutputFormat?: 'png' | 'jpeg'
-  /** Ark `watermark`; off removes the baked-in "AI generated" mark. */
-  seedreamWatermark?: boolean
-  /** Ark `background`; `transparent` needs an alpha-bearing edit reference. */
-  seedreamBackground?: 'opaque' | 'transparent'
-  dashscopeEndpoint?: string
-  dashscopeModel?: string
-  xaiBaseURL?: string
-  xaiModel?: string
-  zhipuBaseURL?: string
-  zhipuModel?: string
-  comfyuiBaseURL?: string
-  comfyuiWorkflows?: ComfyUIWorkflowEntry[]
-  comfyuiActiveWorkflow?: string
-  comfyuiWorkflowJson?: string
-  comfyuiWorkflowName?: string
-  comfyuiTimeoutMs?: number
-  saveToWorkspace?: boolean
-  workspaceFolder?: string
-  showProviderPill?: boolean
-}
+type ProviderRows = never
 interface CredentialInfo { configured?: boolean; source?: string; writable?: boolean }
 interface CredentialResult { ok: boolean; value?: Readonly<Record<string, CredentialInfo>> }
 interface CredentialMutationResult { ok: boolean; error?: { message?: string } }
@@ -203,191 +137,6 @@ interface SidebarRightTabsFace {
 }
 
 const DICT = {
-  zh: {
-    title: '图像生成',
-    description: '配置各 Provider 的 Key 与模型，并选择默认 Provider。',
-    defaultProvider: '默认 Provider',
-    defaultProviderHint: 'Agent 生图默认使用；Studio 与工具调用可临时指定其他 Provider。',
-    settingsReadOnly: '设置由配置文件提供，只读；如需修改请编辑对应的配置来源。',
-    settingsLoading: '正在加载图像生成设置，请稍候。',
-    settingsRemote: '当前连接不支持保存到宿主，请在 DSH 本机页面修改设置。',
-    settingsUnavailable: '宿主尚未提供图像生成设置，请检查插件是否已启用及其加载日志。',
-    settingsIncompatible: '当前加载的设置库不支持保存。请将插件所在环境的 @deepseek-ai/schemastery 更新到 3.18.4 或兼容的 3.x 版本，并重启 DSH。',
-    providerGoogle: 'Google Gemini',
-    providerOpenAI: 'OpenAI',
-    providerOpenAICompat: 'OpenAI 兼容（中转站）',
-    addCompatChannel: '新增 OpenAI 兼容渠道',
-    channelName: '渠道名称',
-    channelNameRequired: '请填写渠道名称。',
-    removeChannel: '删除渠道',
-    removeChannelConfirm: '确定删除“{label}”吗？该渠道的配置将被移除。',
-    providerSeedream: '字节 Seedream',
-    providerDashScope: '阿里 DashScope (通义万相 / Qwen)',
-    providerXAI: 'xAI Grok Imagine',
-    providerZhipu: '智谱 GLM-Image',
-    providerComfyUI: '本地 ComfyUI',
-    providerChatGPTSub: 'ChatGPT 订阅',
-    providerGrokSub: 'Grok 订阅',
-    providerGoogleSub: 'Google 订阅',
-    subBadgeLoggedIn: '已登录',
-    subBadgeLoggedOut: '未登录',
-    subBadgeUnknown: '状态未知',
-    subSectionTitle: '订阅生图',
-    subHint: '通过已登录的订阅账号生图，无需 API Key。登录在你的授权下进行，不会修改任何 API Key 或默认 Provider。',
-    subProxyHint: '需要代理时，请在登录前开启代理软件的 TUN（虚拟网卡）模式。普通系统代理可能无法覆盖 DSH 后端请求，导致网页授权后登录失败。',
-    subAccountLabel: '账号',
-    subAccountEmail: '已登录：{email}',
-    subAccountNone: '未登录',
-    subLogin: '登录',
-    subLoggingIn: '正在登录…',
-    subLogout: '退出登录',
-    subLoggingOut: '正在退出…',
-    subWaitingLogin: '已打开授权页面，请在浏览器中完成登录…',
-    subLoginOk: '登录成功',
-    subModelLabel: '订阅模型',
-    subModelHint: '由订阅通道固定，不可更改。',
-    subEditCapability: '订阅生图 · 图生图：支持。对话 edit_image、Studio 图生图与多模型对比均可上传参考图（最多 5 张）。',
-    subDefaultHint: '订阅 Provider 已支持文字生图与图生图；图生图使用各订阅渠道默认参数。',
-    apiKeyLabel: '{provider} API Key',
-    apiKeyPlaceholder: '留空即可保留已配置的 Key',
-    apiKeyHint: '安全保存为 {key}；页面不会读回明文。',
-    keyReadOnly: 'Key 由 {source} 提供且只读；请在该来源中修改。',
-    credentialsUnavailable: '凭据服务不可用，无法保存 API Key；建议升级 DSH 到稳定版本。',
-    badgeUnavailable: '凭据服务不可用',
-    badgeChecking: '检查中…',
-    badgeConfigured: 'Key 已配置',
-    badgeMissing: 'Key 未配置',
-    badgeUnknown: '状态未知',
-    comfyuiNoKey: '无需 API Key',
-    testConnection: '测试连接',
-    testing: '正在测试…',
-    testOk: '连接成功',
-    testFailed: '连接失败',
-    testUnauthorized: 'Key 无效或无权限',
-    clearKey: '清除 Key',
-    keyCleared: '已清除 Key',
-    clearKeyFailed: '清除 Key 失败',
-    saveKeyFailed: '保存 Key 失败',
-    saveKeyFirst: '请先保存 API Key，再拉取模型或测试连接。',
-    saveEndpointFirst: '接口地址尚未保存，请先点击保存，再拉取模型或测试连接。',
-    endpointRequired: '请填写接口地址并保存，再拉取模型或测试连接。',
-    savedEndpointMissing: '未读取到已保存的接口地址，请保存后重试。',
-    clearKeyUnsupported: '当前版本 DSH 不支持在此清除 Key，请到凭据管理中删除。',
-    endpoint: '接口地址',
-    reset: '重置',
-    resetTitle: '重置为默认官方地址',
-    endpointHintGoogle: 'Google 官方地址或反代端点（全路径）。',
-    googleProtocol: '请求协议',
-    googleInteractions: 'Interactions（默认）',
-    googleNative: '原生 generateContent',
-    saveGoogleProtocolFirst: '请求协议尚未保存，请先点击保存，再拉取模型或测试连接。',
-    endpointHintGoogleNative: '填写 API 基础地址（如 https://example.com/v1beta）；也兼容 Interactions 或 generateContent 完整地址。',
-    endpointHintOpenAI: '官方 api.openai.com 的 /v1 地址；中转站请使用下方「OpenAI 兼容」行。',
-    endpointHintOpenAICompat: '中转站/自建服务的 OpenAI 兼容 /v1 地址（必填），例如 https://your-relay.example.com/v1。',
-    editFormat: '图生图请求形态',
-    editModel: '图生图模型（可选）',
-    editModelHint: '留空沿用上方模型。硅基流动可分别填写 Qwen/Qwen-Image（文生图）和 Qwen/Qwen-Image-Edit（图生图）。',
-    editFormatSiliconFlow: '硅基流动 JSON（image 字符串）',
-    editFormatSiliconFlowHint: '编辑尺寸由参考图决定，不发送尺寸和质量字段。Qwen-Image-Edit 支持一张图，Edit-2509 最多三张；参考图字段由插件填入。',
-    editFormatMultipart: '标准 multipart（OpenAI 官方）',
-    editFormatAutomatic: '自动：官方接口 JSON 格式',
-    editFormatJsonImageUrlArray: 'JSON images 数组（商汤等中转）',
-    editFormatFormReferenceImages: 'multipart + reference_images JSON 数组（base64）',
-    editFormatHint: '商汤、通义、硅基流动已确认的官方接口自动使用对应 JSON 格式；其他中转按接口文档选择。文生图不受影响。',
-    editExtra: '附加 JSON 字段',
-    editExtraPlaceholder: '{"watermark": false, "prompt_extend": true}',
-    editExtraHint: '仅 JSON 形态生效；会合并到请求体末尾，可覆盖默认字段。留空表示不附加。',
-    arkOutputFormat: '输出格式',
-    arkOutputFormatPng: 'PNG（无损，带透明通道）',
-    arkOutputFormatJpeg: 'JPEG（方舟默认，有损）',
-    arkOutputFormatHint: 'JPEG 会在主体边缘留下压缩色斑，抠图时变成难去掉的彩色毛边。要后期加工就选 PNG。',
-    arkWatermark: 'AI 生成水印',
-    arkWatermarkOn: '添加（方舟默认）',
-    arkWatermarkOff: '不添加',
-    arkWatermarkHint: '方舟默认在右下角烙上“AI 生成”标识。做游戏素材或需要后期处理时关掉。',
-    arkBackground: '背景',
-    arkBackgroundOpaque: '不透明（方舟默认）',
-    arkBackgroundTransparent: '透明',
-    arkBackgroundHint: '仅图生图有效，且要求参考图本身带透明通道；文生图会被方舟拒绝，因此这一项只在图生图时发出。',
-    editExtraInvalid: '附加 JSON 字段必须是合法的 JSON 对象。',
-    sizeTable: '自定义分辨率表（JSON）',
-    sizeTableHint: '格式为「比例 → 档位 → 像素尺寸」。留空使用默认尺寸；例如 {"16:9":{"2K":"2048x1152"}}。',
-    sizeTableInvalid: '分辨率表须为「比例 → 数字档位（如 2K）→ 非空尺寸字符串」的 JSON 对象。',
-    defaultQuality: '默认生成质量',
-    defaultQualityHint: '留空不发送 quality。该参数与分辨率独立，上游须支持所填值。',
-    qualityOptions: '可选生成质量（逗号分隔）',
-    generateExtra: '文生图附加字段（JSON）',
-    generateExtraHint: '仅文生图生效，合并到请求体末尾，可覆盖 size 和 quality。关闭商汤水印可填 {"watermark":false}。',
-    editSizeMode: 'JSON 图生图尺寸',
-    editSizeAuto: '自动（兼容商汤）',
-    editSizeSelected: '使用所选分辨率',
-    endpointHintSeedream: '火山方舟兼容的 /api/v3 地址。',
-    endpointHintDashScope: '阿里云百炼 DashScope 官方接口地址。',
-    endpointHintXAI: 'xAI 官方 api.x.ai 的 /v1 地址。',
-    endpointHintZhipu: '智谱开放平台 open.bigmodel.cn 的 /api/paas/v4 地址。',
-    endpointHintComfyUI: '正在运行且 DSH Host 可以访问的 ComfyUI 地址，默认使用本机 8188 端口。',
-    model: '模型',
-    defaultModel: '默认模型',
-    availableModels: '工作台可选模型',
-    availableModelsHint: '勾选后可在工作台切换。手动输入的默认模型会自动加入列表，且不可移除。',
-    defaultModelTag: '默认',
-    workflow: 'API Workflow 工作流',
-    workflowImport: '导入 JSON 文件',
-    workflowMissing: '尚未导入工作流',
-    workflowImported: '已导入 {name}',
-    workflowHint: '从 ComfyUI 导出 API Format JSON，在提示词输入写入 {{prompt}}，种子可用 {{seed}}；图生图工作流在 LoadImage 的 image 输入写入 {{image}}（仅一次）。可导入多个工作流，Agent 也能在调用时按名称指定。',
-    workflowTooLarge: '工作流文件不能超过 5 MB。',
-    workflowActiveTitle: '设为当前使用的工作流',
-    workflowRemove: '删除',
-    workflowPresetPlaceholder: '预设提示词，留空则只用对话内容',
-    workflowPresetTitle: '预设提示词：每次调用此工作流时自动加在用户提示词前面。',
-    workflowNameRequired: '工作流名称不能为空。',
-    workflowDuplicateName: '工作流名称不能重复。',
-    timeout: '生成超时（秒）',
-    timeoutHint: '包括提交、等待和下载图片；默认 300 秒。',
-    cloudTimeout: '云端生成超时（秒）',
-    cloudTimeoutHint: '工作台所有 API Key 通道共用，5–3600 秒，默认 150 秒。不影响订阅通道和 ComfyUI；修改后对新请求生效。',
-    workspaceSection: '工作区',
-    saveToWorkspace: '保存到工作区',
-    saveToWorkspaceHint: '每次生成后，把图片文件保存到当前会话工作区。',
-    folder: '工作区文件夹',
-    folderHint: '相对当前会话工作区的子目录；留空表示工作区根目录。',
-    uiSection: '界面',
-    showPill: '在对话输入栏显示生图切换胶囊',
-    showPillHint: '开启后，输入框工具行会显示一枚胶囊，随手切换默认生图 Provider，无需进入设置；默认关闭。',
-    fetchModels: '拉取模型',
-    fetchingModels: '拉取中…',
-    fetchModelsHint: '点击「拉取模型」用当前 Key 获取可用生图模型列表；也可手动输入。',
-    modelsFound: '找到 {n} 个生图模型，点击模型框选择',
-    modelsNone: '未筛出生图模型，可手动输入模型名',
-    saving: '保存中…',
-    save: '保存',
-    saved: '已保存',
-    settingsWriteRejected: '有一项设置未能保存，请检查后重试。',
-    savedToPath: '已保存到',
-    generating: '正在生成图片…',
-    loading: '正在加载图片…',
-    loadFailed: '图片读取失败 ({status})',
-    generatedTitle: '已生成图片',
-    resultShown: '图片结果已显示在对话中',
-    copyImg: '复制图片',
-    download: '下载图片',
-    openNewTab: '新标签页打开',
-    copiedImage: '已复制图片',
-    copyFailed: '复制失败',
-    regenerate: '重新生成',
-    regenerateTitle: '重新生成图片',
-    regenerateHint: '如有需要可微调提示词。生成的新图片将替代当前展示，原图依然可在版本中查看。',
-    prompt: '提示词',
-    cancel: '取消',
-    confirmRegenerate: '确认生成',
-    regenerating: '重新生成中…',
-    regenerateFailed: '重新生成失败',
-    regenerateSaveFailed: '已重新生成，但保存到图库失败，请重试',
-    versionPrevious: '上一版本',
-    versionNext: '下一版本',
-    versionLabel: '图片版本 {current}/{total}',
-  },
   en: {
     title: 'Image Generation',
     description: 'Configure each provider key and model, then pick the default provider.',
@@ -575,7 +324,7 @@ const DICT = {
   },
 } as const
 
-type DictKey = keyof typeof DICT.zh
+type DictKey = keyof typeof DICT.en
 
 const STYLE = `
 .dsh-ig-card{list-style:none;border:0;background:none;padding:0}
@@ -1008,7 +757,7 @@ export function apply(ctx: Context): void {
       name: 'plugins.bundle.config',
       // Keyed slots select by bundle package name, and this plugin ships as the
       // 'dsh-image-gen' bundle.
-      key: 'dsh-image-gen',
+      key: 'dsh-arya-image-gen',
       locale,
       inject: injectSettingsFace,
     }, ImageGenerationSettingsCard))
@@ -1027,7 +776,7 @@ export function apply(ctx: Context): void {
       name: 'conversation.input.right',
       id: 'image-provider',
       order: 10,
-      inject: (): ProviderPillFace => ({ scope, credentials: credentialsProxy, locale, credentialEvents }),
+      inject: (): ProviderPillFace => ({ scope, locale }),
     }, ImageProviderPill))
   }
   // Credentials resolve through a mutable holder: hosts expose the service
@@ -1094,7 +843,7 @@ export function apply(ctx: Context): void {
     order: 20,
     label: () => {
       const active = locale?.getSnapshot?.()?.active
-      return active?.startsWith('en') ? 'Gallery' : '画廊'
+      return 'Gallery'
     },
     inject: () => ({ locale, credentialEvents }),
   }, GalleryViewTab))
@@ -1113,7 +862,7 @@ export function apply(ctx: Context): void {
       const sidebarTabs = owner.get('sidebarRightTabs') as SidebarRightTabsFace
       const sidebarTitle = (): string => {
         const active = locale?.getSnapshot?.()?.active
-        return active?.startsWith('en') ? 'Image Studio' : '图像工作台'
+        return 'Image Studio'
       }
       // Stage one - the page type. The guide entry is the only one registered
       // (the shipped guide declares none), so `defaultSeed` lands every new
@@ -1180,1369 +929,311 @@ function credentialsFromLegacyConnection(value: unknown): CredentialsRemote | un
   }
 }
 
-/** Structured connectivity probe outcome returned by the test-connection route. */
-interface ProbeOutcome {
-  ok: boolean
-  reason?: 'missing-key' | 'unauthorized' | 'error'
-  message?: string
+/** ComfyUI-only settings card: connection, workflows, server lifecycle, workspace. */
+interface WorkflowDraft {
+  name: string
+  preset: string
 }
 
-/** Credential badge states a provider row can render. */
-type KeyStatus = 'checking' | 'configured' | 'missing' | 'unknown' | 'unavailable'
-
-/** Per-provider editable form state; every provider row saves independently. */
-interface ProviderRowState {
-  expanded: boolean
-  label: string
-  model: string
-  models: string[]
-  editModel: string
-  baseURL: string
-  googleNative: boolean
-  keyInput: string
-  keyStatus: KeyStatus
-  keyInfo: CredentialInfo | undefined
-  testing: boolean
-  testResult: ProbeOutcome | undefined
-  fetchingModels: boolean
-  modelOptions: string[]
-  modelFetchMessage: string
-  modelFetchIsError: boolean
-  saving: boolean
-  message: string
-  messageIsError: boolean
-  workflows: ComfyUIWorkflowEntry[]
-  activeWorkflow: string
-  timeoutSeconds: number
-  /** openai-compat only: edits request shape (#41). Other rows keep the default. */
-  editFormat: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson'
-  /** openai-compat only: extra JSON fields for the JSON edit body, as user text. */
-  editExtraText: string
-  sizeTableText: string
-  generationQuality: string
-  qualityOptionsText: string
-  generateExtraText: string
-  editSizeMode: 'auto' | 'selected'
-  /** seedream only: Ark output controls. Other rows keep the defaults. */
-  outputFormat: 'png' | 'jpeg'
-  watermark: boolean
-  background: 'opaque' | 'transparent'
+/** Settings persisted by this card; the workbench and tools read the same fields. */
+interface ImageSettings {
+  comfyuiBaseURL?: string
+  comfyuiWorkflows?: ComfyUIWorkflowEntry[]
+  comfyuiActiveWorkflow?: string
+  comfyuiWorkflowJson?: string
+  comfyuiWorkflowName?: string
+  comfyuiTimeoutMs?: number
+  comfyuiPythonExe?: string
+  comfyuiServerDir?: string
+  comfyuiExtraArgs?: string
+  comfyuiAutoStart?: boolean
+  saveToWorkspace?: boolean
+  workspaceFolder?: string
+  showProviderPill?: boolean
 }
 
-function emptyProviderRow(): ProviderRowState {
-  return {
-    expanded: false,
-    label: '',
-    model: '',
-    models: [],
-    editModel: '',
-    baseURL: '',
-    googleNative: false,
-    keyInput: '',
-    keyStatus: 'checking',
-    keyInfo: undefined,
-    testing: false,
-    testResult: undefined,
-    fetchingModels: false,
-    modelOptions: [],
-    modelFetchMessage: '',
-    modelFetchIsError: false,
-    saving: false,
-    message: '',
-    messageIsError: false,
-    workflows: [],
-    activeWorkflow: '',
-    timeoutSeconds: DEFAULT_COMFYUI_TIMEOUT_MS / 1000,
-    editFormat: 'multipart',
-    editExtraText: '',
-    sizeTableText: '',
-    generationQuality: '',
-    qualityOptionsText: DEFAULT_COMPAT_QUALITIES.join(', '),
-    generateExtraText: '',
-    editSizeMode: 'auto',
-    outputFormat: 'jpeg',
-    watermark: true,
-    background: 'opaque',
-  }
-}
+/** Mount the settings card, generated-image card, and native conversation gallery view. */
+export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Element {
+  const { scope } = props
+  const snapshot = useSettingsSnapshot(scope)
+  const value = snapshot.value
+  const writable = snapshot.writable !== false
+  const disabled = !writable
 
-/** Settings field each cloud provider persists its model under. */
-const CLOUD_MODEL_FIELDS = {
-  google: 'googleModel',
-  openai: 'openaiModel',
-  'openai-compat': 'openaiCompatModel',
-  seedream: 'seedreamModel',
-  dashscope: 'dashscopeModel',
-  xai: 'xaiModel',
-  zhipu: 'zhipuModel',
-} as const satisfies Record<CloudImageProvider, keyof ImageSettings>
-
-/** Settings field each cloud provider persists its endpoint or base URL under. */
-const CLOUD_URL_FIELDS = {
-  google: 'googleEndpoint',
-  openai: 'openaiBaseURL',
-  'openai-compat': 'openaiCompatBaseURL',
-  seedream: 'seedreamBaseURL',
-  dashscope: 'dashscopeEndpoint',
-  xai: 'xaiBaseURL',
-  zhipu: 'zhipuBaseURL',
-} as const satisfies Record<CloudImageProvider, keyof ImageSettings>
-
-/** Dictionary key of each cloud provider's endpoint hint. */
-const CLOUD_HINT_KEYS = {
-  google: 'endpointHintGoogle',
-  openai: 'endpointHintOpenAI',
-  'openai-compat': 'endpointHintOpenAICompat',
-  seedream: 'endpointHintSeedream',
-  dashscope: 'endpointHintDashScope',
-  xai: 'endpointHintXAI',
-  zhipu: 'endpointHintZhipu',
-} as const satisfies Record<CloudImageProvider, DictKey>
-
-/** Config field a cloud provider persists its model under. */
-function modelFieldOf(provider: CloudImageProvider): string {
-  return CLOUD_MODEL_FIELDS[provider]
-}
-
-/** Config field a cloud provider persists its endpoint or base URL under. */
-function baseURLFieldOf(provider: CloudImageProvider): string {
-  return CLOUD_URL_FIELDS[provider]
-}
-
-/** Providers whose settings row offers the "pull models" button. */
-function modelPullSupported(_provider: CloudImageProvider): boolean {
-  // Every cloud provider ships a model pull; ComfyUI rows never reach here.
-  return true
-}
-
-/** Serialize the extra-fields record into editor text; empty record becomes ''. */
-function editExtraTextOf(value: Record<string, unknown> | undefined): string {
-  if (value === undefined || Object.keys(value).length === 0) return ''
-  try { return JSON.stringify(value) } catch { return '' }
-}
-
-/** Persisted or selected edit-format value → row state; unknown values fall back to standard multipart. */
-function parseEditFormat(value: string | undefined): ProviderRowState['editFormat'] {
-  return value === 'jsonImageUrlArray' || value === 'formReferenceImages' || value === 'siliconflowJson' ? value : 'multipart'
-}
-
-function compatChannelRowKey(channelId: string): `openai-compat:${string}` {
-  return `openai-compat:${channelId}`
-}
-
-function compatRowFields(channel: OpenAICompatChannel): Partial<ProviderRowState> {
-  return {
-    label: channel.label,
-    model: channel.model,
-    models: resolveOpenAICompatModels({ openaiCompatModel: channel.model, openaiCompatModels: channel.models ?? [] }),
-    editModel: channel.editModel ?? '',
-    baseURL: channel.baseURL,
-    editFormat: parseEditFormat(channel.editFormat),
-    editExtraText: editExtraTextOf(channel.editExtra),
-    sizeTableText: editExtraTextOf(channel.sizes),
-    generationQuality: channel.quality ?? '',
-    qualityOptionsText: (channel.qualityOptions !== undefined && channel.qualityOptions.length > 0 ? channel.qualityOptions : DEFAULT_COMPAT_QUALITIES).join(', '),
-    generateExtraText: editExtraTextOf(channel.extraBody),
-    editSizeMode: channel.editSizeMode === 'selected' ? 'selected' : 'auto',
-  }
-}
-
-/** Build one row per provider from persisted settings, including ComfyUI extras. */
-function rowsFromSettings(value: ImageSettings | undefined): ProviderRows {
-  const rows = {} as ProviderRows
-  for (const provider of IMAGE_PROVIDERS) {
-    rows[provider] = {
-      ...emptyProviderRow(),
-      model: modelOf(provider, value),
-      baseURL: baseURLOf(provider, value),
-      ...(provider === 'google' ? { googleNative: value?.googleNative === true } : {}),
-      ...(provider === 'openai' ? { sizeTableText: editExtraTextOf(value?.openaiSizes) } : {}),
-      ...(provider === 'comfyui' ? {
-        workflows: resolveComfyUIWorkflows(value ?? {}),
-        activeWorkflow: activeComfyUIWorkflow(value ?? {})?.name ?? '',
-        timeoutSeconds: Math.max(1, Math.round((value?.comfyuiTimeoutMs ?? DEFAULT_COMFYUI_TIMEOUT_MS) / 1000)),
-      } : {}),
-      ...(provider === 'openai-compat' ? compatRowFields(resolveOpenAICompatChannels(value ?? {})[0]!) : {}),
-      ...(provider === 'seedream' ? {
-        outputFormat: value?.seedreamOutputFormat === 'png' ? 'png' : 'jpeg',
-        watermark: value?.seedreamWatermark !== false,
-        background: value?.seedreamBackground === 'transparent' ? 'transparent' : 'opaque',
-      } : {}),
-    }
-  }
-  for (const channel of resolveOpenAICompatChannels(value ?? {}).slice(1)) {
-    rows[compatChannelRowKey(channel.id)] = { ...emptyProviderRow(), ...compatRowFields(channel) }
-  }
-  return rows
-}
-
-/** Edit each provider independently, pick an explicit default, and verify keys inline. */
-export function ImageGenerationSettingsCard(props: SettingsCardProps) {
-  // Always open: DSH renders this card inside the plugin's own page, so the
-  // old click-to-expand header (and the card chrome around the fields) is gone
-  // — the fields sit directly on the page. `open` stays as the flag the
-  // health/login effects gate on, and is now simply always true.
-  const [open] = useState(true)
-  const [snapshot, setSnapshot] = useState(() => props.scope.getSnapshot())
-  const [health, setHealth] = useState<SettingsHealth>()
-  const state = settingsState(snapshot, health)
-  const settingsWritable = state === 'ready'
-  const [lang, setLang] = useState(() => (props.locale?.getSnapshot?.()?.active?.startsWith('en') ? 'en' : 'zh'))
-  const [defaultProvider, setDefaultProvider] = useState<Provider>(() => props.scope.getSnapshot().value?.provider ?? 'google')
-  const [providerMessage, setProviderMessage] = useState('')
-  const [providerMessageIsError, setProviderMessageIsError] = useState(false)
-  const [cloudTimeoutSeconds, setCloudTimeoutSeconds] = useState(() => (props.scope.getSnapshot().value?.cloudTimeoutMs ?? DEFAULT_CLOUD_TIMEOUT_MS) / 1000)
-  const [cloudTimeoutMessage, setCloudTimeoutMessage] = useState('')
-  const [saveToWorkspace, setSaveToWorkspace] = useState(() => props.scope.getSnapshot().value?.saveToWorkspace ?? true)
-  const [workspaceFolder, setWorkspaceFolder] = useState(() => props.scope.getSnapshot().value?.workspaceFolder ?? 'dsh-image-gen')
-  const [showPill, setShowPill] = useState(() => props.scope.getSnapshot().value?.showProviderPill === true)
-  const [uiMessage, setUiMessage] = useState('')
-  const [uiMessageIsError, setUiMessageIsError] = useState(false)
-  const [workspaceMessage, setWorkspaceMessage] = useState('')
-  const [workspaceMessageIsError, setWorkspaceMessageIsError] = useState(false)
-  const [rows, setRows] = useState<ProviderRows>(() => rowsFromSettings(props.scope.getSnapshot().value))
-  const [compatChannels, setCompatChannels] = useState<OpenAICompatChannel[]>(() => resolveOpenAICompatChannels(props.scope.getSnapshot().value ?? {}).slice(1))
-  // Bumped by host credential events so every badge re-checks without remounting.
-  const [keyTick, setKeyTick] = useState(0)
-  // Subscription login state per provider, read from the host login-status route.
-  const [subStatus, setSubStatus] = useState<Record<SubscriptionProvider, { state: 'logged-in' | 'logged-out' | 'unknown'; email?: string }>>(
-    () => ({ 'chatgpt-sub': { state: 'unknown' }, 'grok-sub': { state: 'unknown' }, 'google-sub': { state: 'unknown' } }),
-  )
-  const [subTick, setSubTick] = useState(0)
-  const [subBusy, setSubBusy] = useState<Partial<Record<SubscriptionProvider, 'login' | 'logout'>>>({})
-  // Providers whose browser login is still completing: the status probe keeps
-  // polling until each lands as logged-in (or the loopback window expires), so
-  // the badge flips without closing and reopening the settings card.
-  const [subPending, setSubPending] = useState<Array<{ provider: SubscriptionProvider; startedAt: number }>>([])
+  // Local editable copies; committed on blur or an explicit button.
+  const [endpoint, setEndpoint] = useState('')
+  const [timeoutSeconds, setTimeoutSeconds] = useState(300)
+  const [pythonExe, setPythonExe] = useState('')
+  const [serverDir, setServerDir] = useState('')
+  const [extraArgs, setExtraArgs] = useState('')
+  const [autoStart, setAutoStart] = useState(false)
+  const [saveToWorkspace, setSaveToWorkspace] = useState(true)
+  const [workspaceFolder, setWorkspaceFolder] = useState('dsh-arya-image-gen')
+  const [showPill, setShowPill] = useState(false)
+  const [presets, setPresets] = useState<Record<string, string>>({})
+  const [activeWorkflow, setActiveWorkflow] = useState('')
+  const [workflows, setWorkflows] = useState<ComfyUIWorkflowEntry[]>([])
+  const [status, setStatus] = useState<ComfyUIServerStatus | null>(null)
+  const [serverBusy, setServerBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [messageIsError, setMessageIsError] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const sync = (): void => { setSnapshot(props.scope.getSnapshot()) }
-    const unsubscribe = props.scope.subscribe(sync)
-    // The host may accept its first view between render and subscription.
-    // Re-read after subscribing so the card cannot stay in a stale loading state.
-    sync()
-    return unsubscribe
-  }, [props.scope])
-  useEffect(() => {
-    if (!open || snapshot.mode === 'memory') return undefined
-    const controller = new AbortController()
-    void fetchSettingsHealth(controller.signal).then(value => {
-      if (!controller.signal.aborted) setHealth(value)
-    })
-    return () => { controller.abort() }
-  }, [open, snapshot.status, snapshot.mode])
-  useEffect(() => {
-    return props.locale?.subscribe?.(() => {
-      setLang(props.locale?.getSnapshot?.()?.active?.startsWith('en') ? 'en' : 'zh')
-    })
-  }, [props.locale])
-  const credentialEvents = props.credentialEvents
-  useEffect(() => credentialEvents?.listen(() => { setKeyTick(tick => tick + 1) }), [credentialEvents])
-
-  // Subscription login badges: one status probe on card open, after every
-  // login/logout, on window focus (the user just returned from the authorize
-  // tab), and every 2s while a browser login is still completing. The browser
-  // never touches tokens; the host route reports only the state word and the
-  // account email.
-  const pending = subPending
-  useEffect(() => {
-    if (!open) return undefined
-    let active = true
-    const probe = async (): Promise<void> => {
-      try {
-        const response = await fetch(SUBSCRIPTION_STATUS_ROUTE, { method: 'POST', cache: 'no-store' })
-        if (!response.ok) return
-        const payload = await response.json() as { statuses?: Record<string, { state?: string; email?: string }> }
-        if (!active || payload.statuses === undefined) return
-        const next: Record<SubscriptionProvider, { state: 'logged-in' | 'logged-out' | 'unknown'; email?: string }> = { 'chatgpt-sub': { state: 'unknown' }, 'grok-sub': { state: 'unknown' }, 'google-sub': { state: 'unknown' } }
-        for (const provider of SUBSCRIPTION_PROVIDERS) {
-          const row = payload.statuses[provider]
-          if (row?.state === 'logged-in') next[provider] = { state: 'logged-in', ...(typeof row.email === 'string' ? { email: row.email } : {}) }
-          else if (row?.state === 'logged-out') next[provider] = { state: 'logged-out' }
-        }
-        setSubStatus(next)
-        // A pending login just landed: drop it from the poll set and surface
-        // the success message on that provider's row.
-        const landed = pending.filter(entry => next[entry.provider].state === 'logged-in')
-        if (landed.length > 0) {
-          setSubPending(current => current.filter(entry => next[entry.provider].state !== 'logged-in'))
-          for (const entry of landed) {
-            updateRow(entry.provider, { message: t('subLoginOk'), messageIsError: false })
-          }
-        }
-        // Bounded by the host's 10-minute loopback window: entries older than
-        // that stop polling instead of spinning forever.
-        const WINDOW_MS = 10.5 * 60_000
-        const stale = pending.filter(entry => Date.now() - entry.startedAt > WINDOW_MS)
-        if (stale.length > 0) {
-          setSubPending(current => current.filter(entry => Date.now() - entry.startedAt <= WINDOW_MS))
-        }
-      } catch { /* badges stay unknown */ }
-    }
-    void probe()
-    // While a browser login is in flight, keep polling; stop when none is.
-    let timer: ReturnType<typeof setInterval> | undefined
-    if (pending.length > 0) {
-      timer = setInterval(() => { void probe() }, 2000)
-    }
-    const onFocus = (): void => { void probe() }
-    window.addEventListener('focus', onFocus)
-    return () => {
-      active = false
-      if (timer !== undefined) clearInterval(timer)
-      window.removeEventListener('focus', onFocus)
-    }
-    // pending is read fresh from the closure each render; its identity changes
-    // on setSubPending and restarts the interval with the updated set.
-  }, [open, subTick, pending])
-
-  /** Start a subscription login: the host registers PKCE and the loopback
-   * catch server, then the browser opens the vendor's authorize URL. The
-   * provider joins the pending set so the badge polls until login lands. */
-  const subscriptionLogin = async (provider: SubscriptionProvider): Promise<void> => {
-    updateRow(provider, { message: '', messageIsError: false })
-    setSubBusy(current => ({ ...current, [provider]: 'login' }))
-    try {
-      const response = await fetch(SUBSCRIPTION_LOGIN_ROUTE, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ provider }),
-      })
-      const payload = await response.json().catch(() => ({})) as { ok?: boolean; url?: string; error?: string | { message?: string } }
-      if (!response.ok || payload.ok !== true || typeof payload.url !== 'string') {
-        const detail = typeof payload.error === 'string' ? payload.error : payload.error?.message
-        throw new Error(detail ?? `HTTP ${String(response.status)}`)
-      }
-      // The loopback catch window is 10 minutes; the poll set drops the row
-      // earlier if it lands, and this expiry drops it if it never does.
-      setSubPending(current => [...current.filter(entry => entry.provider !== provider), { provider, startedAt: Date.now() }])
-      window.open(payload.url, '_blank', 'noopener')
-      updateRow(provider, { message: t('subWaitingLogin'), messageIsError: false })
-    } catch (cause) {
-      updateRow(provider, { message: cause instanceof Error ? cause.message : String(cause), messageIsError: true })
-    } finally {
-      setSubBusy(current => { const next = { ...current }; delete next[provider]; return next })
-    }
-  }
-
-  /** Sign out one subscription account; nothing else changes. */
-  const subscriptionLogout = async (provider: SubscriptionProvider): Promise<void> => {
-    setSubBusy(current => ({ ...current, [provider]: 'logout' }))
-    try {
-      const response = await fetch(SUBSCRIPTION_LOGIN_ROUTE, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ provider, action: 'logout' }),
-      })
-      if (!response.ok) throw new Error(`HTTP ${String(response.status)}`)
-      updateRow(provider, { message: '', messageIsError: false })
-    } catch (cause) {
-      updateRow(provider, { message: cause instanceof Error ? cause.message : String(cause), messageIsError: true })
-    } finally {
-      setSubBusy(current => { const next = { ...current }; delete next[provider]; return next })
-      setSubTick(tick => tick + 1)
-    }
-  }
-
-  const t = (keyName: DictKey, params?: Record<string, string>): string => {
-    const dict = lang === 'en' ? DICT.en : DICT.zh
-    let text: string = dict[keyName] || DICT.zh[keyName] || keyName
-    if (params) {
-      for (const [k, v] of Object.entries(params)) {
-        text = text.replace(`{${k}}`, v)
-      }
-    }
-    return text
-  }
-  const stateMessages = {
-    loading: 'settingsLoading', remote: 'settingsRemote', unavailable: 'settingsUnavailable',
-    readOnly: 'settingsReadOnly', incompatible: 'settingsIncompatible',
-  } as const satisfies Record<Exclude<SettingsState, 'ready'>, DictKey>
-  const settingsMessage = state === 'ready' ? undefined : t(stateMessages[state])
-  const saveSetting = async (field: string, value: unknown): Promise<void> => {
-    if (settingsMessage !== undefined) throw new Error(settingsMessage)
-    await writeSetting(props.scope, field, value, t('settingsWriteRejected'))
-  }
-
-  const providerLabels: Record<Provider, string> = {
-    google: t('providerGoogle'),
-    openai: t('providerOpenAI'),
-    'openai-compat': t('providerOpenAICompat'),
-    seedream: t('providerSeedream'),
-    dashscope: t('providerDashScope'),
-    xai: t('providerXAI'),
-    zhipu: t('providerZhipu'),
-    comfyui: t('providerComfyUI'),
-    'chatgpt-sub': t('providerChatGPTSub'),
-    'grok-sub': t('providerGrokSub'),
-    'google-sub': t('providerGoogleSub'),
-  }
-
-  useEffect(() => {
-    const value = snapshot.value
-    setDefaultProvider(value?.provider ?? 'google')
-    setCloudTimeoutSeconds((value?.cloudTimeoutMs ?? DEFAULT_CLOUD_TIMEOUT_MS) / 1000)
-    setSaveToWorkspace(value?.saveToWorkspace ?? true)
-    setWorkspaceFolder(value?.workspaceFolder ?? 'dsh-image-gen')
+    setEndpoint(value?.comfyuiBaseURL ?? DEFAULT_COMFYUI_BASE_URL)
+    setTimeoutSeconds(Math.max(1, Math.round((value?.comfyuiTimeoutMs ?? DEFAULT_COMFYUI_TIMEOUT_MS) / 1000)))
+    setPythonExe(value?.comfyuiPythonExe ?? DEFAULT_COMFYUI_PYTHON_EXE)
+    setServerDir(value?.comfyuiServerDir ?? DEFAULT_COMFYUI_SERVER_DIR)
+    setExtraArgs(value?.comfyuiExtraArgs ?? DEFAULT_COMFYUI_EXTRA_ARGS)
+    setAutoStart(value?.comfyuiAutoStart === true)
+    setSaveToWorkspace(value?.saveToWorkspace !== false)
+    setWorkspaceFolder(value?.workspaceFolder ?? 'dsh-arya-image-gen')
     setShowPill(value?.showProviderPill === true)
-    setRows(current => {
-      const next = { ...current }
-      for (const provider of IMAGE_PROVIDERS) {
-        next[provider] = {
-          ...current[provider],
-          model: modelOf(provider, value),
-          ...(provider === 'openai-compat' ? compatRowFields(resolveOpenAICompatChannels(value ?? {})[0]!) : {}),
-          baseURL: baseURLOf(provider, value),
-          ...(provider === 'comfyui' ? {
-            workflows: resolveComfyUIWorkflows(value ?? {}),
-            activeWorkflow: activeComfyUIWorkflow(value ?? {})?.name ?? '',
-            timeoutSeconds: Math.max(1, Math.round((value?.comfyuiTimeoutMs ?? DEFAULT_COMFYUI_TIMEOUT_MS) / 1000)),
-          } : {}),
-          ...(provider === 'seedream' ? {
-            outputFormat: value?.seedreamOutputFormat === 'png' ? 'png' : 'jpeg',
-            watermark: value?.seedreamWatermark !== false,
-            background: value?.seedreamBackground === 'transparent' ? 'transparent' : 'opaque',
-          } : {}),
-        }
-      }
-      for (const channel of resolveOpenAICompatChannels(value ?? {}).slice(1)) {
-        const key = compatChannelRowKey(channel.id)
-        next[key] = { ...(current[key] ?? emptyProviderRow()), ...compatRowFields(channel) }
-      }
-      return next
-    })
-  }, [snapshot])
+    const entries = resolveComfyUIWorkflows(value ?? {})
+    setWorkflows(entries)
+    setPresets(Object.fromEntries(entries.map(entry => [entry.name, entry.presetPrompt ?? ''])))
+    setActiveWorkflow(activeComfyUIWorkflow(value ?? {})?.name ?? '')
+  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.showProviderPill])
 
-  const credentials = props.credentials
-  const credentialsAvailable = props.credentialsAvailable
-  useEffect(() => {
-    let active = true
-    const targets: Array<{ key: ProviderRowTarget; keyRef: string }> = [
-      ...CLOUD_IMAGE_PROVIDERS.flatMap(provider => {
-        const keyRef = cloudCredentialRef(provider)
-        return keyRef === undefined ? [] : [{ key: provider as ProviderRowTarget, keyRef }]
-      }),
-      ...compatChannels.map(channel => ({ key: compatChannelRowKey(channel.id), keyRef: channel.keyRef })),
-    ]
-    if (!credentialsAvailable()) {
-      setRows(current => {
-        const next = { ...current }
-        for (const target of targets) next[target.key] = { ...(current[target.key] ?? emptyProviderRow()), keyStatus: 'unavailable', keyInfo: undefined }
-        return next
-      })
-      return () => { active = false }
-    }
-    for (const target of targets) {
-      setRows(current => ({ ...current, [target.key]: { ...current[target.key], keyStatus: 'checking' } }))
-      void credentials.describe([target.keyRef]).then(response => {
-        if (!active) return
-        const info = response.ok ? response.value?.[target.keyRef] : undefined
-        setRows(current => ({ ...current, [target.key]: { ...current[target.key], keyStatus: response.ok ? (info?.configured ? 'configured' : 'missing') : 'unknown', keyInfo: info } }))
-      }).catch(() => {
-        if (!active) return
-        setRows(current => ({ ...current, [target.key]: { ...current[target.key], keyStatus: 'unknown' } }))
-      })
-    }
-    return () => { active = false }
-  }, [credentials, credentialsAvailable, keyTick, compatChannels])
-
-  const updateRow = (target: ProviderRowTarget, patch: Partial<ProviderRowState>): void => {
-    setRows(current => ({ ...current, [target]: { ...current[target], ...patch } }))
-  }
-
-  /** The only action that ever changes the default provider; saving a key never does. */
-  const selectDefaultProvider = (provider: Provider): void => {
-    setDefaultProvider(provider)
-    setProviderMessage(''); setProviderMessageIsError(false)
-    void saveSetting('provider', provider).catch((cause: unknown) => {
-      setDefaultProvider(snapshot.value?.provider ?? 'google')
-      setProviderMessage(cause instanceof Error ? cause.message : String(cause))
-      setProviderMessageIsError(true)
-    })
-  }
-
-  const saveProviderRow = async (provider: Provider, channel?: OpenAICompatChannel): Promise<void> => {
-    const target = channel === undefined ? provider : compatChannelRowKey(channel.id)
-    const row = rows[target]!
-    updateRow(target, { saving: true, message: '', messageIsError: false })
+  /** Persist one field; a failed write rolls the local copy back on the next snapshot. */
+  const save = async (field: string, next: unknown): Promise<void> => {
+    setMessage('')
     try {
-      if (channel !== undefined) {
-        const label = row.label.trim()
-        if (label.length === 0) throw new Error(t('channelNameRequired'))
-        const updated: OpenAICompatChannel = {
-          ...channel,
-          label,
-          baseURL: row.baseURL.trim(),
-          model: row.model.trim(),
-          models: resolveOpenAICompatModels({ openaiCompatModel: row.model, openaiCompatModels: row.models }),
-          editModel: row.editModel.trim(),
-          quality: row.generationQuality.trim(),
-          qualityOptions: [...new Set(row.qualityOptionsText.split(',').map(value => value.trim()).filter(Boolean))],
-          extraBody: parseExtraFields(row.generateExtraText, t('editExtraInvalid')),
-          editSizeMode: row.editSizeMode,
-          editFormat: row.editFormat,
-          editExtra: parseExtraFields(row.editExtraText, t('editExtraInvalid')),
-          sizes: parseSizeTable(row.sizeTableText, t('sizeTableInvalid')),
-        }
-        const nextChannels = compatChannels.some(entry => entry.id === channel.id)
-          ? compatChannels.map(entry => entry.id === channel.id ? updated : entry)
-          : [...compatChannels, updated]
-        await saveSetting('openaiCompatChannels', nextChannels)
-        setCompatChannels(nextChannels)
-        if (row.keyInput.trim().length > 0) {
-          if (!credentialsAvailable()) throw new Error(t('credentialsUnavailable'))
-          const response = await props.credentials.set(channel.keyRef, row.keyInput.trim())
-          if (!response.ok) throw new Error(response.error?.message ?? t('saveKeyFailed'))
-          updateRow(target, { keyInput: '', keyStatus: 'configured' })
-        }
-      } else if (provider === 'comfyui') {
-        const entries = row.workflows.map(entry => ({ name: entry.name.trim(), json: entry.json, presetPrompt: (entry.presetPrompt ?? '').trim() }))
-        for (const entry of entries) {
-          if (entry.name.length === 0) throw new Error(t('workflowNameRequired'))
-          validateComfyUIWorkflowJson(entry.json)
-        }
-        if (new Set(entries.map(entry => entry.name)).size !== entries.length) throw new Error(t('workflowDuplicateName'))
-        const activeEntry = entries.find(entry => entry.name === row.activeWorkflow) ?? entries[0]
-        await saveSetting('comfyuiBaseURL', row.baseURL)
-        await saveSetting('comfyuiWorkflows', entries)
-        await saveSetting('comfyuiActiveWorkflow', activeEntry === undefined ? '' : activeEntry.name)
-        await saveSetting('comfyuiWorkflowJson', activeEntry === undefined ? '' : activeEntry.json)
-        await saveSetting('comfyuiWorkflowName', activeEntry === undefined ? '' : activeEntry.name)
-        await saveSetting('comfyuiTimeoutMs', Math.max(1, Math.round(row.timeoutSeconds)) * 1000)
-      } else if (isSubscriptionProvider(provider)) {
-        await Promise.resolve()
-      } else {
-        const editExtra = provider === 'openai-compat' ? parseExtraFields(row.editExtraText, t('editExtraInvalid')) : {}
-        const sizeTable = provider === 'openai' || provider === 'openai-compat' ? parseSizeTable(row.sizeTableText, t('sizeTableInvalid')) : {}
-        const generateExtra = provider === 'openai-compat' ? parseExtraFields(row.generateExtraText, t('editExtraInvalid')) : {}
-        if (provider === 'openai') for (const tiers of Object.values(sizeTable)) for (const size of Object.values(tiers)) validateOfficialSize(row.model, size)
-        await saveSetting(modelFieldOf(provider), row.model)
-        await saveSetting(baseURLFieldOf(provider), row.baseURL)
-        if (provider === 'google') await saveSetting('googleNative', row.googleNative)
-        if (provider === 'openai') await saveSetting('openaiSizes', sizeTable)
-        if (provider === 'openai-compat') {
-          await saveSetting('openaiCompatLabel', row.label.trim())
-          await saveSetting('openaiCompatModels', resolveOpenAICompatModels({ openaiCompatModel: row.model, openaiCompatModels: row.models }))
-          await saveSetting('openaiCompatEditModel', row.editModel.trim())
-          await saveSetting('openaiCompatEditFormat', row.editFormat)
-          await saveSetting('openaiCompatEditExtra', editExtra)
-          await saveSetting('openaiCompatSizes', sizeTable)
-          await saveSetting('openaiCompatQuality', row.generationQuality.trim())
-          await saveSetting('openaiCompatQualityOptions', [...new Set(row.qualityOptionsText.split(',').map(value => value.trim()).filter(Boolean))])
-          await saveSetting('openaiCompatExtraBody', generateExtra)
-          await saveSetting('openaiCompatEditSizeMode', row.editSizeMode)
-        }
-        if (provider === 'seedream') {
-          await saveSetting('seedreamOutputFormat', row.outputFormat)
-          await saveSetting('seedreamWatermark', row.watermark)
-          await saveSetting('seedreamBackground', row.background)
-        }
-        if (row.keyInput.trim().length > 0) {
-          const keyRef = cloudCredentialRef(provider)
-          if (keyRef === undefined) throw new Error(t('comfyuiNoKey'))
-          if (!credentialsAvailable()) throw new Error(t('credentialsUnavailable'))
-          const response = await props.credentials.set(keyRef, row.keyInput.trim())
-          if (!response.ok) throw new Error(response.error?.message ?? t('saveKeyFailed'))
-          updateRow(target, { keyInput: '', keyStatus: 'configured' })
-        }
-      }
-      updateRow(target, {
-        message: t('saved'), messageIsError: false,
-        testResult: undefined, modelFetchMessage: '', modelFetchIsError: false,
-      })
+      await writeSetting(scope, field, next, 'Setting was not saved. Please try again')
     } catch (cause) {
-      updateRow(target, { message: cause instanceof Error ? cause.message : String(cause), messageIsError: true })
-    } finally {
-      updateRow(target, { saving: false })
+      setMessage(cause instanceof Error ? cause.message : String(cause))
+      setMessageIsError(true)
     }
   }
 
-  const addCompatChannel = (): void => {
-    const id = `channel-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-    const label = `OpenAI 兼容 ${compatChannels.length + 2}`
-    const channel: OpenAICompatChannel = {
-      id,
-      label,
-      keyRef: openAICompatKeyRef(id),
-      baseURL: '',
-      model: '',
-      models: [],
-      qualityOptions: [...DEFAULT_COMPAT_QUALITIES],
-    }
-    setCompatChannels(current => [...current, channel])
-    setRows(current => ({
-      ...current,
-      [compatChannelRowKey(id)]: { ...emptyProviderRow(), ...compatRowFields(channel), expanded: true },
-    }))
+  /** Commit the ComfyUI fields that are edited as free text. */
+  const commitServerFields = (): void => {
+    if (endpoint.trim() !== (value?.comfyuiBaseURL ?? DEFAULT_COMFYUI_BASE_URL)) void save('comfyuiBaseURL', endpoint.trim())
+    const nextTimeout = Math.max(1, Math.min(3_600, Math.round(timeoutSeconds))) * 1000
+    if (nextTimeout !== (value?.comfyuiTimeoutMs ?? DEFAULT_COMFYUI_TIMEOUT_MS)) void save('comfyuiTimeoutMs', nextTimeout)
+    if (pythonExe.trim() !== (value?.comfyuiPythonExe ?? DEFAULT_COMFYUI_PYTHON_EXE)) void save('comfyuiPythonExe', pythonExe.trim())
+    if (serverDir.trim() !== (value?.comfyuiServerDir ?? DEFAULT_COMFYUI_SERVER_DIR)) void save('comfyuiServerDir', serverDir.trim())
+    if (extraArgs.trim() !== (value?.comfyuiExtraArgs ?? DEFAULT_COMFYUI_EXTRA_ARGS)) void save('comfyuiExtraArgs', extraArgs.trim())
   }
 
-  const removeCompatChannel = async (channel: OpenAICompatChannel): Promise<void> => {
-    if (!window.confirm(t('removeChannelConfirm', { label: channel.label }))) return
-    const target = compatChannelRowKey(channel.id)
-    const persisted = snapshot.value?.openaiCompatChannels?.some(entry => entry.id === channel.id) === true
-    if (!persisted) {
-      setCompatChannels(current => current.filter(entry => entry.id !== channel.id))
-      setRows(current => {
-        const next = { ...current }
-        delete next[target]
-        return next
-      })
-      return
-    }
-    let removed = false
-    updateRow(target, { saving: true, message: '', messageIsError: false })
+  /** Load the live server status; called on mount, after an action, and on demand. */
+  const refreshStatus = useCallback(async (): Promise<void> => {
     try {
-      const nextChannels = compatChannels.filter(entry => entry.id !== channel.id)
-      await saveSetting('openaiCompatChannels', nextChannels)
-      if (snapshot.value?.openaiCompatActiveChannel === channel.id) await saveSetting('openaiCompatActiveChannel', 'default')
-      removed = true
-      setCompatChannels(nextChannels)
-      setRows(current => {
-        const next = { ...current }
-        delete next[target]
-        return next
-      })
+      const response = await fetch(COMFYUI_SERVER_ROUTE, { credentials: 'same-origin' })
+      const payload = await response.json() as { status?: ComfyUIServerStatus, error?: string }
+      if (payload.status !== undefined) setStatus(payload.status)
+      else if (payload.error !== undefined) { setMessage(payload.error); setMessageIsError(true) }
     } catch (cause) {
-      updateRow(target, { message: cause instanceof Error ? cause.message : String(cause), messageIsError: true })
-    } finally {
-      if (!removed) updateRow(target, { saving: false })
+      setMessage(cause instanceof Error ? cause.message : String(cause))
+      setMessageIsError(true)
     }
-  }
+  }, [])
 
-  /** These actions use host settings, so drafts must be saved before making a request. */
-  const providerActionBlockMessage = (provider: Provider, channel?: OpenAICompatChannel): string | undefined => {
-    const target = channel === undefined ? provider : compatChannelRowKey(channel.id)
-    const row = rows[target]!
-    if (row.keyInput.trim().length > 0) return t('saveKeyFirst')
-    if (isSubscriptionProvider(provider)) return undefined
-    const address = row.baseURL.trim()
-    if (address.length === 0) return t('endpointRequired')
-    const savedAddress = channel === undefined ? baseURLOf(provider, props.scope.getSnapshot().value) : channel.baseURL
-    if (address !== savedAddress.trim()) return t('saveEndpointFirst')
-    if (provider === 'google' && row.googleNative !== (props.scope.getSnapshot().value?.googleNative === true)) return t('saveGoogleProtocolFirst')
-    return undefined
-  }
+  useEffect(() => { void refreshStatus() }, [refreshStatus])
 
-  /** Localize the host's missing-address error while preserving upstream details. */
-  const providerErrorMessage = (message: string | undefined): string =>
-    message === 'Base URL is not configured' ? t('savedEndpointMissing') : message ?? t('testFailed')
-
-  /** Probe through the host route so the browser side never touches credential values. */
-  const testConnection = async (provider: Provider, channel?: OpenAICompatChannel): Promise<void> => {
-    const target = channel === undefined ? provider : compatChannelRowKey(channel.id)
-    const blocked = providerActionBlockMessage(provider, channel)
-    if (blocked !== undefined) {
-      updateRow(target, { message: blocked, messageIsError: false, testResult: undefined })
-      return
-    }
-    updateRow(target, { testing: true, testResult: undefined, message: '', messageIsError: false })
+  /** Run one server action against the local ComfyUI process manager. */
+  const serverAction = async (action: 'start' | 'stop' | 'restart'): Promise<void> => {
+    if (serverBusy) return
+    setServerBusy(true)
+    setMessage('')
     try {
-      const response = await fetch(TEST_CONNECTION_ROUTE, {
+      const response = await fetch(COMFYUI_SERVER_ROUTE, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ provider, ...(channel === undefined ? {} : { channel: channel.id }) }),
+        body: JSON.stringify({ action }),
       })
-      if (!response.ok) throw new Error(`HTTP ${String(response.status)}`)
-      updateRow(target, { testResult: await response.json() as ProbeOutcome })
-    } catch (cause) {
-      updateRow(target, { testResult: { ok: false, reason: 'error', message: cause instanceof Error ? cause.message : String(cause) } })
-    } finally {
-      updateRow(target, { testing: false })
-    }
-  }
-
-  /** Pull the provider's image-capable model ids through the host route (Google and the OpenAI family). */
-  const fetchProviderModels = async (provider: CloudImageProvider, channel?: OpenAICompatChannel): Promise<void> => {
-    const target = channel === undefined ? provider : compatChannelRowKey(channel.id)
-    const blocked = providerActionBlockMessage(provider, channel)
-    if (blocked !== undefined) {
-      updateRow(target, { modelFetchMessage: blocked, modelFetchIsError: false })
-      return
-    }
-    updateRow(target, { fetchingModels: true, modelFetchMessage: '', modelFetchIsError: false })
-    try {
-      const response = await fetch(TEST_CONNECTION_ROUTE, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ provider, action: 'models', ...(channel === undefined ? {} : { channel: channel.id }) }),
-      })
-      if (!response.ok) throw new Error(`HTTP ${String(response.status)}`)
-      const payload = await response.json() as { ok: boolean; models?: unknown; reason?: string; message?: string }
-      if (payload.ok && Array.isArray(payload.models)) {
-        const models = payload.models.filter((id): id is string => typeof id === 'string')
-        updateRow(target, {
-          modelOptions: models,
-          modelFetchMessage: models.length > 0 ? t('modelsFound', { n: String(models.length) }) : t('modelsNone'),
-          modelFetchIsError: models.length === 0,
-        })
-      } else if (payload.reason === 'missing-key') {
-        updateRow(target, { modelFetchMessage: t('badgeMissing'), modelFetchIsError: true })
-      } else if (payload.reason === 'unauthorized') {
-        updateRow(target, { modelFetchMessage: t('testUnauthorized'), modelFetchIsError: true })
+      const payload = await response.json() as { status?: ComfyUIServerStatus, error?: string }
+      if (payload.status !== undefined) setStatus(payload.status)
+      if (payload.error !== undefined) {
+        setMessage(payload.error)
+        setMessageIsError(true)
       } else {
-        updateRow(target, { modelFetchMessage: providerErrorMessage(payload.message), modelFetchIsError: true })
+        setMessageIsError(false)
+        setMessage(`ComfyUI ${action === 'restart' ? 'restarted' : action === 'start' ? 'started' : 'stopped'}.`)
       }
     } catch (cause) {
-      updateRow(target, { modelFetchMessage: cause instanceof Error ? cause.message : String(cause), modelFetchIsError: true })
+      setMessage(cause instanceof Error ? cause.message : String(cause))
+      setMessageIsError(true)
     } finally {
-      updateRow(target, { fetchingModels: false })
+      setServerBusy(false)
     }
   }
 
-  const clearProviderKey = async (provider: CloudImageProvider, channel?: OpenAICompatChannel): Promise<void> => {
-    const target = channel === undefined ? provider : compatChannelRowKey(channel.id)
-    const keyRef = channel === undefined ? cloudCredentialRef(provider) : channel.keyRef
-    if (keyRef === undefined) return
-    if (typeof props.credentials.unset !== 'function') {
-      updateRow(target, { message: t('clearKeyUnsupported'), messageIsError: true })
-      return
-    }
-    updateRow(target, { saving: true, message: '', messageIsError: false })
-    try {
-      const response = await props.credentials.unset(keyRef)
-      if (!response.ok) throw new Error(response.error?.message ?? t('clearKeyFailed'))
-      updateRow(target, { keyStatus: 'missing', keyInput: '', testResult: undefined, message: t('keyCleared'), messageIsError: false })
-    } catch (cause) {
-      updateRow(target, { message: cause instanceof Error ? cause.message : String(cause), messageIsError: true })
-    } finally {
-      updateRow(target, { saving: false })
-    }
-  }
-
-  const testResultText = (result: ProbeOutcome | undefined): string => {
-    if (result === undefined) return ''
-    if (result.ok) return t('testOk')
-    if (result.reason === 'missing-key') return t('badgeMissing')
-    if (result.reason === 'unauthorized') return t('testUnauthorized')
-    return `${t('testFailed')}${result.message !== undefined && result.message.length > 0 ? `: ${providerErrorMessage(result.message)}` : ''}`
-  }
-
-  const badgeOf = (provider: Provider, channel?: OpenAICompatChannel): { text: string; className: string } => {
-    if (provider === 'comfyui') return { text: t('comfyuiNoKey'), className: 'dsh-ig-badge dsh-ig-badge-neutral' }
-    if (isSubscriptionProvider(provider)) {
-      const status = subStatus[provider].state
-      if (status === 'logged-in') return { text: t('subBadgeLoggedIn'), className: 'dsh-ig-badge dsh-ig-badge-ok' }
-      if (status === 'logged-out') return { text: t('subBadgeLoggedOut'), className: 'dsh-ig-badge dsh-ig-badge-missing' }
-      return { text: t('subBadgeUnknown'), className: 'dsh-ig-badge dsh-ig-badge-neutral' }
-    }
-    const target = channel === undefined ? provider : compatChannelRowKey(channel.id)
-    const status = rows[target]!.keyStatus
-    if (status === 'checking') return { text: t('badgeChecking'), className: 'dsh-ig-badge dsh-ig-badge-neutral dsh-ig-badge-checking' }
-    if (status === 'configured') return { text: t('badgeConfigured'), className: 'dsh-ig-badge dsh-ig-badge-ok' }
-    if (status === 'missing') return { text: t('badgeMissing'), className: 'dsh-ig-badge dsh-ig-badge-missing' }
-    if (status === 'unavailable') return { text: t('badgeUnavailable'), className: 'dsh-ig-badge dsh-ig-badge-neutral' }
-    return { text: t('badgeUnknown'), className: 'dsh-ig-badge dsh-ig-badge-neutral' }
-  }
-
+  /** Import one API-format workflow JSON file under a unique label. */
   const importWorkflow = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (file === undefined) return
-    updateRow('comfyui', { message: '', messageIsError: false })
+    setImporting(true)
+    setMessage('')
     try {
-      if (file.size > MAX_COMFYUI_WORKFLOW_BYTES) throw new Error(t('workflowTooLarge'))
-      const json = await file.text()
-      validateComfyUIWorkflowJson(json)
-      const name = uniqueComfyUIWorkflowName(file.name, rows.comfyui.workflows.map(entry => entry.name))
-      setRows(current => ({ ...current, comfyui: { ...current.comfyui, workflows: [...current.comfyui.workflows, { name, json }], activeWorkflow: current.comfyui.activeWorkflow.length > 0 ? current.comfyui.activeWorkflow : name } }))
-      updateRow('comfyui', { message: t('workflowImported', { name }), messageIsError: false })
+      if (file.size > MAX_COMFYUI_WORKFLOW_BYTES) throw new Error('The workflow file must be 5 MB or smaller.')
+      const text = await file.text()
+      validateComfyUIWorkflowJson(text)
+      const name = uniqueComfyUIWorkflowName(file.name.replace(/\.json$/i, ''), workflows.map(entry => entry.name))
+      const next = [...workflows, { name, json: text }]
+      await save('comfyuiWorkflows', next)
+      if (activeWorkflow.length === 0) {
+        setActiveWorkflow(name)
+        void save('comfyuiActiveWorkflow', name)
+      }
     } catch (cause) {
-      updateRow('comfyui', { message: cause instanceof Error ? cause.message : String(cause), messageIsError: true })
+      setMessage(cause instanceof Error ? cause.message : String(cause))
+      setMessageIsError(true)
+    } finally {
+      setImporting(false)
     }
   }
 
-  /** Renaming the active entry keeps the active selection following its new name. */
-  const renameWorkflow = (index: number, name: string): void => {
-    setRows(current => {
-      const previous = current.comfyui.workflows[index]
-      const workflows = current.comfyui.workflows.map((entry, position) => position === index ? { ...entry, name } : entry)
-      const activeWorkflow = previous !== undefined && previous.name === current.comfyui.activeWorkflow ? name : current.comfyui.activeWorkflow
-      return { ...current, comfyui: { ...current.comfyui, workflows, activeWorkflow } }
-    })
-  }
-
-  /** Removing the active entry moves the selection to the first remaining workflow. */
-  const removeWorkflow = (index: number): void => {
-    setRows(current => {
-      const previous = current.comfyui.workflows[index]
-      const workflows = current.comfyui.workflows.filter((_entry, position) => position !== index)
-      const activeWorkflow = previous !== undefined && previous.name === current.comfyui.activeWorkflow ? workflows[0]?.name ?? '' : current.comfyui.activeWorkflow
-      return { ...current, comfyui: { ...current.comfyui, workflows, activeWorkflow } }
-    })
-  }
-
-  /** Editing one entry's preset leaves the rest of the entry untouched. */
-  const setWorkflowPreset = (index: number, presetPrompt: string): void => {
-    setRows(current => {
-      const workflows = current.comfyui.workflows.map((entry, position) => position === index ? { ...entry, presetPrompt } : entry)
-      return { ...current, comfyui: { ...current.comfyui, workflows } }
-    })
-  }
-
-  const commitCloudTimeout = (): void => {
-    if (!Number.isInteger(cloudTimeoutSeconds) || cloudTimeoutSeconds < 5 || cloudTimeoutSeconds > 3600) {
-      setCloudTimeoutSeconds((snapshot.value?.cloudTimeoutMs ?? DEFAULT_CLOUD_TIMEOUT_MS) / 1000)
-      return
+  /** Persist the workflow list and keep the active selection valid. */
+  const persistWorkflows = (next: ComfyUIWorkflowEntry[]): void => {
+    setWorkflows(next)
+    void save('comfyuiWorkflows', next)
+    if (!next.some(entry => entry.name === activeWorkflow)) {
+      const fallback = next[0]?.name ?? ''
+      setActiveWorkflow(fallback)
+      void save('comfyuiActiveWorkflow', fallback)
     }
-    const next = cloudTimeoutSeconds * 1000
-    if (next === (snapshot.value?.cloudTimeoutMs ?? DEFAULT_CLOUD_TIMEOUT_MS)) return
-    setCloudTimeoutMessage('')
-    void saveSetting('cloudTimeoutMs', next).catch((cause: unknown) => {
-      setCloudTimeoutSeconds((snapshot.value?.cloudTimeoutMs ?? DEFAULT_CLOUD_TIMEOUT_MS) / 1000)
-      setCloudTimeoutMessage(cause instanceof Error ? cause.message : String(cause))
-    })
   }
 
-  /** Workspace checkbox persists immediately, like every other toggle on this card. */
-  const toggleSaveToWorkspace = (next: boolean): void => {
-    setSaveToWorkspace(next)
-    setWorkspaceMessage(''); setWorkspaceMessageIsError(false)
-    void saveSetting('saveToWorkspace', next).catch((cause: unknown) => {
-      setSaveToWorkspace(snapshot.value?.saveToWorkspace ?? true)
-      setWorkspaceMessage(cause instanceof Error ? cause.message : String(cause))
-      setWorkspaceMessageIsError(true)
-    })
+  const removeWorkflow = (name: string): void => {
+    persistWorkflows(workflows.filter(entry => entry.name !== name))
   }
 
-  /** Folder input persists on Enter or blur; no save button needed. */
-  const commitWorkspaceFolder = (): void => {
-    const next = workspaceFolder.trim()
-    if (next === (snapshot.value?.workspaceFolder ?? 'dsh-image-gen')) return
-    setWorkspaceMessage(''); setWorkspaceMessageIsError(false)
-    void saveSetting('workspaceFolder', next).then(() => {
-      setWorkspaceMessage(t('saved'))
-    }).catch((cause: unknown) => {
-      setWorkspaceFolder(snapshot.value?.workspaceFolder ?? 'dsh-image-gen')
-      setWorkspaceMessage(cause instanceof Error ? cause.message : String(cause))
-      setWorkspaceMessageIsError(true)
-    })
+  /** Commit one workflow's preset prompt on blur. */
+  const commitPreset = (name: string): void => {
+    const text = (presets[name] ?? '').trim()
+    if (text === (workflows.find(entry => entry.name === name)?.presetPrompt ?? '')) return
+    persistWorkflows(workflows.map(entry => entry.name === name
+      ? (text.length > 0 ? { ...entry, presetPrompt: text } : { name: entry.name, json: entry.json })
+      : entry))
   }
 
-  /** The pill toggle saves immediately, like the default-provider radio. */
-  const toggleShowPill = (next: boolean): void => {
-    setShowPill(next)
-    setUiMessage(''); setUiMessageIsError(false)
-    void saveSetting('showProviderPill', next).catch((cause: unknown) => {
-      setShowPill(snapshot.value?.showProviderPill === true)
-      setUiMessage(cause instanceof Error ? cause.message : String(cause))
-      setUiMessageIsError(true)
-    })
+  const selectActive = (name: string): void => {
+    setActiveWorkflow(name)
+    void save('comfyuiActiveWorkflow', name)
   }
 
-  const renderCloudBody = (provider: CloudImageProvider, channel?: OpenAICompatChannel) => {
-    const target = channel === undefined ? provider : compatChannelRowKey(channel.id)
-    const row = rows[target]!
-    const update = (patch: Partial<ProviderRowState>): void => { updateRow(target, patch) }
-    const modelListId = `dsh-ig-${target.replace(/[^A-Za-z0-9_-]/g, '-')}-model-options`
-    const officialEditFormat = provider === 'openai-compat'
-      ? compatEditFormat({ openaiCompatBaseURL: row.baseURL, openaiCompatModel: row.editModel.trim() || row.model }) : 'multipart'
-    const automaticEditFormat = officialEditFormat !== 'multipart'
-    const editFormat = automaticEditFormat ? officialEditFormat : row.editFormat
-    const keyRef = channel === undefined ? cloudCredentialRef(provider) ?? '' : channel.keyRef
-    const keyReadOnly = row.keyInfo?.writable === false
-    const keyUnavailable = !credentialsAvailable()
-    const providerLabel = provider === 'openai-compat' && row.label.trim().length > 0 ? row.label.trim() : providerLabels[provider]
-    const compatModelChoices = provider === 'openai-compat'
-      ? resolveOpenAICompatModels({ openaiCompatModel: row.model, openaiCompatModels: [...row.models, ...row.modelOptions] })
-      : []
-    return (
-      <div className="dsh-ig-provider-body">
-        <form onSubmit={(event) => { event.preventDefault(); void saveProviderRow(provider, channel) }}>
-          {provider === 'openai-compat' ? (
-            <label className="dsh-ig-field">
-              <span className="dsh-ig-label">{t('channelName')}</span>
-              <input className="dsh-ig-input" value={row.label} onChange={event => { update({ label: event.target.value }) }} placeholder={providerLabels[provider]} required={channel !== undefined} disabled={!settingsWritable} />
-            </label>
-          ) : null}
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('apiKeyLabel', { provider: providerLabel })}</span>
-            <input
-              className="dsh-ig-input"
-              type="password"
-              autoComplete="off"
-              value={row.keyInput}
-              onChange={event => { update({ keyInput: event.target.value }) }}
-              placeholder={row.keyStatus === 'configured' ? t('apiKeyPlaceholder') : ''}
-              disabled={!settingsWritable || keyReadOnly || keyUnavailable}
-            />
-            <span className="dsh-ig-hint">
-              {keyUnavailable ? t('credentialsUnavailable')
-                : keyReadOnly ? t('keyReadOnly', { source: row.keyInfo?.source ?? '' })
-                : t('apiKeyHint', { key: keyRef })}
-            </span>
-          </label>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('endpoint')}</span>
-            <div className="dsh-ig-input-group">
-              <input className="dsh-ig-input" type="url" value={row.baseURL} onChange={event => { update({ baseURL: event.target.value }) }} required disabled={!settingsWritable} />
-              {provider !== 'openai-compat' ? (
-                <button type="button" className="dsh-ig-btn-reset" title={t('resetTitle')} onClick={() => { update({ baseURL: DEFAULT_BASE_URLS[provider] }) }} disabled={!settingsWritable}>{t('reset')}</button>
-              ) : null}
-            </div>
-            <span className="dsh-ig-hint">{t(provider === 'google' && row.googleNative ? 'endpointHintGoogleNative' : CLOUD_HINT_KEYS[provider])}</span>
-          </label>
-          {provider === 'google' ? (
-            <label className="dsh-ig-field">
-              <span className="dsh-ig-label">{t('googleProtocol')}</span>
-              <select className="dsh-ig-input" value={row.googleNative ? 'native' : 'interactions'} onChange={event => { update({ googleNative: event.target.value === 'native' }) }} disabled={!settingsWritable}>
-                <option value="interactions">{t('googleInteractions')}</option>
-                <option value="native">{t('googleNative')}</option>
-              </select>
-            </label>
-          ) : null}
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">{t(provider === 'openai-compat' ? 'defaultModel' : 'model')}</span>
-            {modelPullSupported(provider) ? (
-              <div className="dsh-ig-input-group">
-                <input
-                  className="dsh-ig-input"
-                  value={row.model}
-                  onChange={event => { update({ model: event.target.value }) }}
-                  onBlur={() => {
-                    if (provider === 'openai-compat') update({ models: resolveOpenAICompatModels({ openaiCompatModel: row.model, openaiCompatModels: row.models }) })
-                  }}
-                  list={modelListId}
-                  required={provider !== 'openai-compat'}
-                  disabled={!settingsWritable}
-                />
-                <datalist id={modelListId}>
-                  {row.modelOptions.map(id => <option key={id} value={id} />)}
-                </datalist>
-                <button
-                  type="button"
-                  className="dsh-ig-btn-secondary"
-                  disabled={row.fetchingModels || row.saving || !settingsWritable}
-                  onClick={() => { void fetchProviderModels(provider, channel) }}
-                >{row.fetchingModels ? t('fetchingModels') : t('fetchModels')}</button>
-              </div>
-            ) : (
-              <input className="dsh-ig-input" value={row.model} onChange={event => { update({ model: event.target.value }) }} required disabled={!settingsWritable} />
-            )}
-            {modelPullSupported(provider) ? (
-              row.modelFetchMessage.length > 0 ? (
-                <span className={`dsh-ig-hint${row.modelFetchIsError ? ' dsh-ig-hint-error' : ''}`} role="status">{row.modelFetchMessage}</span>
-              ) : (
-                <span className="dsh-ig-hint">{t('fetchModelsHint')}</span>
-              )
-            ) : null}
-          </label>
-          {provider === 'openai-compat' && compatModelChoices.length > 0 ? (
-            <div className="dsh-ig-field">
-              <span className="dsh-ig-label">{t('availableModels')}</span>
-              <div className="dsh-ig-model-picker">
-                {compatModelChoices.map(id => {
-                  const isDefault = row.model.trim() === id
-                  const checked = isDefault || row.models.includes(id)
-                  return (
-                    <label className="dsh-ig-check-row" key={id} title={id}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={!settingsWritable || isDefault}
-                        onChange={event => {
-                          const models = event.target.checked ? [...row.models, id] : row.models.filter(model => model !== id)
-                          update({ models: resolveOpenAICompatModels({ openaiCompatModel: row.model, openaiCompatModels: models }) })
-                        }}
-                      />
-                      <span className="dsh-ig-model-option">{id}</span>
-                      {isDefault ? <span className="dsh-ig-model-default">{t('defaultModelTag')}</span> : null}
-                    </label>
-                  )
-                })}
-              </div>
-              <span className="dsh-ig-hint">{t('availableModelsHint')}</span>
-            </div>
-          ) : null}
-          {provider === 'openai-compat' ? (
-            <label className="dsh-ig-field">
-              <span className="dsh-ig-label">{t('editModel')}</span>
-              <input className="dsh-ig-input" value={row.editModel} onChange={event => { update({ editModel: event.target.value }) }} list={modelListId} disabled={!settingsWritable} />
-              <span className="dsh-ig-hint">{t('editModelHint')}</span>
-            </label>
-          ) : null}
-          {provider === 'openai-compat' ? (
-            <label className="dsh-ig-field">
-              <span className="dsh-ig-label">{t('editFormat')}</span>
-              <select
-                className="dsh-ig-input"
-                value={automaticEditFormat ? '__official__' : row.editFormat}
-                onChange={event => { update({ editFormat: parseEditFormat(event.target.value) }) }}
-                disabled={!settingsWritable || automaticEditFormat}
-              >
-                {automaticEditFormat ? <option value="__official__">{t('editFormatAutomatic')}</option> : null}
-                <option value="multipart">{t('editFormatMultipart')}</option>
-                <option value="jsonImageUrlArray">{t('editFormatJsonImageUrlArray')}</option>
-                <option value="formReferenceImages">{t('editFormatFormReferenceImages')}</option>
-                <option value="siliconflowJson">{t('editFormatSiliconFlow')}</option>
-              </select>
-              <span className="dsh-ig-hint">{t(editFormat === 'siliconflowJson' ? 'editFormatSiliconFlowHint' : 'editFormatHint')}</span>
-            </label>
-          ) : null}
-          {provider === 'seedream' ? (
-            <>
-              <label className="dsh-ig-field">
-                <span className="dsh-ig-label">{t('arkOutputFormat')}</span>
-                <select
-                  className="dsh-ig-input"
-                  value={row.outputFormat}
-                  onChange={event => { update({ outputFormat: event.target.value === 'png' ? 'png' : 'jpeg' }) }}
-                  disabled={!settingsWritable}
-                >
-                  <option value="jpeg">{t('arkOutputFormatJpeg')}</option>
-                  <option value="png">{t('arkOutputFormatPng')}</option>
-                </select>
-                <span className="dsh-ig-hint">{t('arkOutputFormatHint')}</span>
-              </label>
-              <label className="dsh-ig-field">
-                <span className="dsh-ig-label">{t('arkWatermark')}</span>
-                <select
-                  className="dsh-ig-input"
-                  value={row.watermark ? 'on' : 'off'}
-                  onChange={event => { update({ watermark: event.target.value === 'on' }) }}
-                  disabled={!settingsWritable}
-                >
-                  <option value="on">{t('arkWatermarkOn')}</option>
-                  <option value="off">{t('arkWatermarkOff')}</option>
-                </select>
-                <span className="dsh-ig-hint">{t('arkWatermarkHint')}</span>
-              </label>
-              <label className="dsh-ig-field">
-                <span className="dsh-ig-label">{t('arkBackground')}</span>
-                <select
-                  className="dsh-ig-input"
-                  value={row.background}
-                  onChange={event => { update({ background: event.target.value === 'transparent' ? 'transparent' : 'opaque' }) }}
-                  disabled={!settingsWritable}
-                >
-                  <option value="opaque">{t('arkBackgroundOpaque')}</option>
-                  <option value="transparent">{t('arkBackgroundTransparent')}</option>
-                </select>
-                <span className="dsh-ig-hint">{t('arkBackgroundHint')}</span>
-              </label>
-            </>
-          ) : null}
-          {provider === 'openai' || provider === 'openai-compat' ? (
-            <label className="dsh-ig-field">
-              <span className="dsh-ig-label">{t('sizeTable')}</span>
-              <textarea className="dsh-ig-input dsh-ig-textarea" value={row.sizeTableText} onChange={event => { update({ sizeTableText: event.target.value }) }} rows={3} disabled={!settingsWritable} />
-              <span className="dsh-ig-hint">{t('sizeTableHint')}</span>
-            </label>
-          ) : null}
-          {provider === 'openai-compat' ? (
-            <>
-              <label className="dsh-ig-field">
-                <span className="dsh-ig-label">{t('defaultQuality')}</span>
-                <input className="dsh-ig-input" value={row.generationQuality} onChange={event => { update({ generationQuality: event.target.value }) }} placeholder="high" disabled={!settingsWritable} />
-                <span className="dsh-ig-hint">{t('defaultQualityHint')}</span>
-              </label>
-              <label className="dsh-ig-field">
-                <span className="dsh-ig-label">{t('qualityOptions')}</span>
-                <input className="dsh-ig-input" value={row.qualityOptionsText} onChange={event => { update({ qualityOptionsText: event.target.value }) }} disabled={!settingsWritable} />
-              </label>
-              <label className="dsh-ig-field">
-                <span className="dsh-ig-label">{t('generateExtra')}</span>
-                <textarea className="dsh-ig-input dsh-ig-textarea" value={row.generateExtraText} onChange={event => { update({ generateExtraText: event.target.value }) }} placeholder={'{"watermark":false}'} rows={2} disabled={!settingsWritable} />
-                <span className="dsh-ig-hint">{t('generateExtraHint')}</span>
-              </label>
-            </>
-          ) : null}
-          {provider === 'openai-compat' && (editFormat === 'jsonImageUrlArray' || editFormat === 'qwenJson' || editFormat === 'siliconflowJson') ? (
-            <>
-            {editFormat === 'jsonImageUrlArray' ? (
-            <label className="dsh-ig-field">
-              <span className="dsh-ig-label">{t('editSizeMode')}</span>
-              <select className="dsh-ig-input" value={row.editSizeMode} onChange={event => { update({ editSizeMode: event.target.value === 'selected' ? 'selected' : 'auto' }) }} disabled={!settingsWritable}>
-                <option value="auto">{t('editSizeAuto')}</option><option value="selected">{t('editSizeSelected')}</option>
-              </select>
-            </label>
-            ) : null}
-            <label className="dsh-ig-field">
-              <span className="dsh-ig-label">{t('editExtra')}</span>
-              <textarea
-                className="dsh-ig-input dsh-ig-textarea"
-                value={row.editExtraText}
-                onChange={event => { update({ editExtraText: event.target.value }) }}
-                placeholder={t('editExtraPlaceholder')}
-                rows={2}
-                disabled={!settingsWritable}
-              />
-              <span className="dsh-ig-hint">{t('editExtraHint')}</span>
-            </label>
-            </>
-          ) : null}
-          <div className="dsh-ig-row-actions">
-            <p className={`dsh-ig-status${row.messageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{row.message || testResultText(row.testResult)}</p>
-            <span className="dsh-ig-row-buttons">
-              <button type="button" className="dsh-ig-btn-secondary" disabled={row.testing || row.saving} onClick={() => { void testConnection(provider, channel) }}>{row.testing ? t('testing') : t('testConnection')}</button>
-              {row.keyStatus === 'configured' && !keyReadOnly ? (
-                <button type="button" className="dsh-ig-btn-secondary dsh-ig-btn-danger" disabled={row.saving} onClick={() => { void clearProviderKey(provider, channel) }}>{t('clearKey')}</button>
-              ) : null}
-              <button className="dsh-ig-save" type="submit" disabled={row.saving || row.testing || row.fetchingModels || !settingsWritable}>{row.saving ? t('saving') : t('save')}</button>
-            </span>
-          </div>
-        </form>
-      </div>
-    )
-  }
-
-  const renderComfyUIBody = () => {
-    const row = rows.comfyui
-    return (
-      <div className="dsh-ig-provider-body">
-        <form onSubmit={(event) => { event.preventDefault(); void saveProviderRow('comfyui') }}>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('endpoint')}</span>
-            <div className="dsh-ig-input-group">
-              <input className="dsh-ig-input" type="url" value={row.baseURL} onChange={event => { updateRow('comfyui', { baseURL: event.target.value }) }} required disabled={!settingsWritable} />
-              <button type="button" className="dsh-ig-btn-reset" title={t('resetTitle')} onClick={() => { updateRow('comfyui', { baseURL: DEFAULT_BASE_URLS.comfyui }) }} disabled={!settingsWritable}>{t('reset')}</button>
-            </div>
-            <span className="dsh-ig-hint">{t('endpointHintComfyUI')}</span>
-          </label>
-          <div className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('workflow')}</span>
-            <div className="dsh-ig-file-row">
-              <label className="dsh-ig-file-button">
-                <input className="dsh-ig-file-input" type="file" accept=".json,application/json" onChange={event => { void importWorkflow(event) }} />
-                {t('workflowImport')}
-              </label>
-              {row.workflows.length === 0 ? <span className="dsh-ig-file-name">{t('workflowMissing')}</span> : null}
-            </div>
-            {row.workflows.length > 0 ? (
-              <ul className="dsh-ig-workflow-list">
-                {row.workflows.map((entry, index) => (
-                  <li className="dsh-ig-workflow-row" key={String(index)}>
-                    <div className="dsh-ig-workflow-main">
-                      <label className="dsh-ig-workflow-active" title={t('workflowActiveTitle')}>
-                        <input
-                          type="radio"
-                          name="dsh-ig-active-workflow"
-                          aria-label={t('workflowActiveTitle')}
-                          checked={entry.name === row.activeWorkflow}
-                          onChange={() => { updateRow('comfyui', { activeWorkflow: entry.name }) }}
-                        />
-                      </label>
-                      <input
-                        className="dsh-ig-input dsh-ig-workflow-name"
-                        value={entry.name}
-                        title={entry.name}
-                        onChange={event => { renameWorkflow(index, event.target.value) }}
-                      />
-                      <button type="button" className="dsh-ig-btn-reset" onClick={() => { removeWorkflow(index) }}>{t('workflowRemove')}</button>
-                    </div>
-                    <input
-                      className="dsh-ig-input dsh-ig-workflow-preset"
-                      value={entry.presetPrompt ?? ''}
-                      placeholder={t('workflowPresetPlaceholder')}
-                      title={t('workflowPresetTitle')}
-                      onChange={event => { setWorkflowPreset(index, event.target.value) }}
-                    />
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <span className="dsh-ig-hint">{t('workflowHint')}</span>
-          </div>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('timeout')}</span>
-            <input className="dsh-ig-input" type="number" min="1" max="3600" step="1" value={row.timeoutSeconds} onChange={event => { updateRow('comfyui', { timeoutSeconds: Number(event.target.value) }) }} required disabled={!settingsWritable} />
-            <span className="dsh-ig-hint">{t('timeoutHint')}</span>
-          </label>
-          <div className="dsh-ig-row-actions">
-            <p className={`dsh-ig-status${row.messageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{row.message || testResultText(row.testResult)}</p>
-            <span className="dsh-ig-row-buttons">
-              <button type="button" className="dsh-ig-btn-secondary" disabled={row.testing} onClick={() => { void testConnection('comfyui') }}>{row.testing ? t('testing') : t('testConnection')}</button>
-              <button className="dsh-ig-save" type="submit" disabled={row.saving || !settingsWritable || row.workflows.length === 0}>{row.saving ? t('saving') : t('save')}</button>
-            </span>
-          </div>
-        </form>
-      </div>
-    )
-  }
-
-  /** Subscription rows: account login/logout, fixed model, edit limitation. */
-  const renderSubscriptionBody = (provider: SubscriptionProvider) => {
-    const row = rows[provider]
-    const status = subStatus[provider]
-    const busy = subBusy[provider]
-    return (
-      <div className="dsh-ig-provider-body">
-        <form onSubmit={(event) => { event.preventDefault(); void saveProviderRow(provider) }}>
-          <div className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('subSectionTitle')}</span>
-            <p className="dsh-ig-hint">{t('subHint')}</p>
-            <p className="dsh-ig-hint" role="note">{t('subProxyHint')}</p>
-          </div>
-          <div className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('subAccountLabel')}</span>
-            <p className="dsh-ig-hint">{status.state === 'logged-in'
-              ? t('subAccountEmail', { email: status.email ?? '' })
-              : status.state === 'logged-out' ? t('subAccountNone') : t('subBadgeUnknown')}</p>
-            <span className="dsh-ig-row-buttons">
-              {status.state === 'logged-in'
-                ? <button type="button" className="dsh-ig-btn-secondary" disabled={busy !== undefined} onClick={() => { void subscriptionLogout(provider) }}>{busy === 'logout' ? t('subLoggingOut') : t('subLogout')}</button>
-                : <button type="button" className="dsh-ig-save" disabled={busy !== undefined} onClick={() => { void subscriptionLogin(provider); setSubTick(tick => tick + 1) }}>{busy === 'login' ? t('subLoggingIn') : t('subLogin')}</button>}
-            </span>
-          </div>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('subModelLabel')}</span>
-            <input className="dsh-ig-input" type="text" value={row.model} readOnly disabled />
-            <span className="dsh-ig-hint">{t('subModelHint')}</span>
-          </label>
-          <div className="dsh-ig-field">
-            <span className="dsh-ig-hint">{t('subEditCapability')}</span>
-          </div>
-          <div className="dsh-ig-row-actions">
-            <p className={`dsh-ig-status${row.messageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{row.message || testResultText(row.testResult)}</p>
-            <span className="dsh-ig-row-buttons">
-              <button type="button" className="dsh-ig-btn-secondary" disabled={row.testing} onClick={() => { void testConnection(provider); setSubTick(tick => tick + 1) }}>{row.testing ? t('testing') : t('testConnection')}</button>
-              <button className="dsh-ig-save" type="submit" disabled={row.saving || !settingsWritable}>{row.saving ? t('saving') : t('save')}</button>
-            </span>
-          </div>
-        </form>
-      </div>
-    )
-  }
-
-  // Providers keep their collapse: the plugin page is the settings surface now,
-  // and a dozen providers expanded at once would make it far too long. The row
-  // carries no card chrome — the header is a plain row and the body sits
-  // directly under it on the page.
-  const renderProviderRow = (provider: Provider) => {
-    const row = rows[provider]
-    const badge = badgeOf(provider)
-    const label = provider === 'openai-compat' && row.label.trim().length > 0 ? row.label.trim() : providerLabels[provider]
-    return (
-      <div key={provider} className="dsh-ig-provider-row">
-        <div className="dsh-ig-provider-head-row">
-          {provider === 'openai-compat' ? <button type="button" className="dsh-ig-btn-secondary dsh-ig-channel-add" title={t('addCompatChannel')} aria-label={t('addCompatChannel')} onClick={addCompatChannel} disabled={!settingsWritable}>+</button> : null}
-          <button type="button" className="dsh-ig-provider-head" aria-expanded={row.expanded} onClick={() => { updateRow(provider, { expanded: !row.expanded }) }}>
-            <span className="dsh-ig-provider-name">{label}</span>
-            <span className={badge.className} title={badge.text}><span className="dsh-ig-badge-dot" aria-hidden="true" />{badge.text}</span>
-            <span className={`dsh-ig-provider-chevron ${row.expanded ? 'dsh-ig-provider-chevron-open' : ''}`} aria-hidden="true">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4"/></svg>
-            </span>
-          </button>
-        </div>
-        {row.expanded ? (provider === 'comfyui' ? renderComfyUIBody() : isSubscriptionProvider(provider) ? renderSubscriptionBody(provider) : renderCloudBody(provider)) : null}
-      </div>
-    )
-  }
-
-  const renderCompatChannelRow = (channel: OpenAICompatChannel) => {
-    const target = compatChannelRowKey(channel.id)
-    const row = rows[target]!
-    const badge = badgeOf('openai-compat', channel)
-    return (
-      <div key={target} className="dsh-ig-provider-row dsh-ig-compat-channel-row">
-        <div className="dsh-ig-provider-head-row">
-          <button type="button" className="dsh-ig-provider-head" aria-expanded={row.expanded} onClick={() => { updateRow(target, { expanded: !row.expanded }) }}>
-            <span className="dsh-ig-provider-name">{channel.label}</span>
-            <span className={badge.className} title={badge.text}><span className="dsh-ig-badge-dot" aria-hidden="true" />{badge.text}</span>
-            <span className={`dsh-ig-provider-chevron ${row.expanded ? 'dsh-ig-provider-chevron-open' : ''}`} aria-hidden="true">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4"/></svg>
-            </span>
-          </button>
-          <button type="button" className="dsh-ig-btn-secondary dsh-ig-btn-danger" disabled={row.saving || !settingsWritable} onClick={() => { void removeCompatChannel(channel) }}>{t('removeChannel')}</button>
-        </div>
-        {row.expanded ? renderCloudBody('openai-compat', channel) : null}
-      </div>
-    )
-  }
+  const statusText = status === null ? 'Checking…'
+    : status.up ? `Running · ${status.version ?? 'unknown version'}${status.device === undefined ? '' : ` · ${status.device}`}`
+    : status.busy ? 'Starting or stopping…'
+    : 'Not running'
 
   return (
     <li className="dsh-ig-card">
       <div className="dsh-ig-head">
         <span className="dsh-ig-head-text">
-          <span className="dsh-ig-title">{t('title')}</span>
-          <span className="dsh-ig-desc">{t('description')}</span>
+          <span className="dsh-ig-title">ComfyUI image generation</span>
+          <span className="dsh-ig-desc">Local ComfyUI workflows power chat generation, the workbench, and the infinite canvas.</span>
         </span>
       </div>
       <div className="dsh-ig-body">
-          {settingsMessage !== undefined ? <p className="dsh-ig-status dsh-ig-status-readonly" role="note">{settingsMessage}</p> : null}
-          <div className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('defaultProvider')}</span>
-            <div className="dsh-ig-radios" role="radiogroup" aria-label={t('defaultProvider')}>
-              {IMAGE_PROVIDERS.map(provider => (
-                <label key={provider} className={`dsh-ig-radio${defaultProvider === provider ? ' dsh-ig-radio-checked' : ''}`}>
-                  <input
-                    type="radio"
-                    name="dsh-ig-default-provider"
-                    checked={defaultProvider === provider}
-                    onChange={() => { selectDefaultProvider(provider) }}
-                    disabled={!settingsWritable}
-                  />
-                  {providerLabels[provider]}
-                </label>
+        {snapshot.status !== 'ready' ? <p className="dsh-ig-status dsh-ig-status-readonly" role="note">{snapshot.status === 'unavailable' ? 'Settings are unavailable on this host.' : 'Settings are read-only on this host.'}</p> : null}
+
+        <div className="dsh-ig-section">
+          <span className="dsh-ig-section-title">Connection</span>
+          <label className="dsh-ig-field">
+            <span className="dsh-ig-label">Endpoint</span>
+            <input className="dsh-ig-input" value={endpoint} onChange={event => setEndpoint(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_BASE_URL} disabled={disabled} />
+            <span className="dsh-ig-hint">ComfyUI server reachable by the DSH host; the default points at port 8188 on this computer.</span>
+          </label>
+          <label className="dsh-ig-field">
+            <span className="dsh-ig-label">Generation timeout (seconds)</span>
+            <input className="dsh-ig-input" type="number" min="1" max="3600" value={timeoutSeconds} onChange={event => setTimeoutSeconds(Number(event.target.value))} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} disabled={disabled} />
+            <span className="dsh-ig-hint">Covers submission, queuing, and image download; defaults to 300 seconds.</span>
+          </label>
+        </div>
+
+        <div className="dsh-ig-section">
+          <span className="dsh-ig-section-title">Server</span>
+          <div className="dsh-ig-server-row">
+            <span className={`dsh-ig-server-status ${status?.up === true ? 'is-up' : 'is-down'}`} role="status">
+              <span className="dsh-ig-server-dot" aria-hidden="true" />
+              {statusText}
+            </span>
+            <div className="dsh-ig-server-actions">
+              <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('start') }} disabled={!writable || serverBusy || status?.up === true}>Start</button>
+              <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('stop') }} disabled={!writable || serverBusy || status?.up !== true}>Stop</button>
+              <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void serverAction('restart') }} disabled={!writable || serverBusy}>Restart</button>
+              <button type="button" className="dsh-ig-btn-secondary" onClick={() => { void refreshStatus() }} disabled={serverBusy}>Refresh</button>
+            </div>
+          </div>
+          <span className="dsh-ig-hint">Start launches main.py with the configured Python; Stop matches only ComfyUI's own process, never other listeners on the port.</span>
+          <label className="dsh-ig-field">
+            <span className="dsh-ig-label">Python executable</span>
+            <input className="dsh-ig-input" value={pythonExe} onChange={event => setPythonExe(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_PYTHON_EXE} disabled={disabled} />
+          </label>
+          <label className="dsh-ig-field">
+            <span className="dsh-ig-label">ComfyUI directory</span>
+            <input className="dsh-ig-input" value={serverDir} onChange={event => setServerDir(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_SERVER_DIR} disabled={disabled} />
+            <span className="dsh-ig-hint">Directory that contains main.py; the server is launched from here.</span>
+          </label>
+          <label className="dsh-ig-field">
+            <span className="dsh-ig-label">Extra main.py arguments</span>
+            <input className="dsh-ig-input" value={extraArgs} onChange={event => setExtraArgs(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_EXTRA_ARGS} disabled={disabled} />
+          </label>
+          <label className="dsh-ig-check-row">
+            <input type="checkbox" checked={autoStart} onChange={event => { setAutoStart(event.target.checked); void save('comfyuiAutoStart', event.target.checked) }} disabled={disabled} />
+            <span className="dsh-ig-label">Start ComfyUI automatically when the plugin loads</span>
+          </label>
+        </div>
+
+        <div className="dsh-ig-section">
+          <span className="dsh-ig-section-title">Workflows</span>
+          <div className="dsh-ig-workflow-actions">
+            <button type="button" className="dsh-ig-btn-secondary" onClick={() => { fileRef.current?.click() }} disabled={disabled || importing}>{importing ? 'Importing…' : 'Import workflow JSON'}</button>
+            <input ref={fileRef} type="file" accept="application/json,.json" onChange={event => { void importWorkflow(event) }} hidden />
+          </div>
+          <span className="dsh-ig-hint">Export an API-format JSON from ComfyUI and put {"{{prompt}}"} in its prompt input; {"{{seed}}"} is available for a random seed. For image editing put {"{{image}}"} (exactly once) in the LoadImage image input.</span>
+          {workflows.length === 0 ? <p className="dsh-ig-status" role="note">No workflows imported yet. Import one to enable generation.</p> : (
+            <div className="dsh-ig-workflow-list">
+              {workflows.map(entry => (
+                <div key={entry.name} className={`dsh-ig-workflow-row${entry.name === activeWorkflow ? ' is-active' : ''}`}>
+                  <label className="dsh-ig-workflow-head">
+                    <input type="radio" name="dsh-ig-active-workflow" checked={entry.name === activeWorkflow} onChange={() => selectActive(entry.name)} disabled={disabled} />
+                    <span className="dsh-ig-workflow-name" title={entry.name}>{entry.name}</span>
+                  </label>
+                  <input className="dsh-ig-input" value={presets[entry.name] ?? ''} placeholder="Preset prompt (optional)" onChange={event => setPresets(current => ({ ...current, [entry.name]: event.target.value }))} onBlur={() => commitPreset(entry.name)} onKeyDown={event => { if (event.key === 'Enter') commitPreset(entry.name) }} disabled={disabled} />
+                  <button type="button" className="dsh-ig-btn-secondary dsh-ig-btn-danger" onClick={() => removeWorkflow(entry.name)} disabled={disabled}>Remove</button>
+                </div>
               ))}
             </div>
-            <span className="dsh-ig-hint">{t('defaultProviderHint')}</span>
-            {providerMessage.length > 0 ? <span className={`dsh-ig-status${providerMessageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{providerMessage}</span> : null}
-          </div>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">{t('cloudTimeout')}</span>
-            <input
-              className="dsh-ig-input"
-              type="number" min="5" max="3600" step="1"
-              value={cloudTimeoutSeconds}
-              onChange={event => { setCloudTimeoutSeconds(Number(event.target.value)) }}
-              onBlur={() => { commitCloudTimeout() }}
-              onKeyDown={event => { if (event.key === 'Enter') commitCloudTimeout() }}
-              required disabled={!settingsWritable}
-            />
-            <span className="dsh-ig-hint">{t('cloudTimeoutHint')}</span>
-            {cloudTimeoutMessage.length > 0 ? <span className="dsh-ig-status dsh-ig-status-error" role="status">{cloudTimeoutMessage}</span> : null}
-          </label>
-          <div className="dsh-ig-providers">
-            {IMAGE_PROVIDERS.flatMap(provider => [
-              renderProviderRow(provider),
-              ...(provider === 'openai-compat' ? compatChannels.map(channel => renderCompatChannelRow(channel)) : []),
-            ])}
-          </div>
-          <div className="dsh-ig-section">
-            <span className="dsh-ig-section-title">{t('workspaceSection')}</span>
-            <div className="dsh-ig-field">
-              <label className="dsh-ig-check-row">
-                <input type="checkbox" checked={saveToWorkspace} onChange={event => { toggleSaveToWorkspace(event.target.checked) }} disabled={!settingsWritable} />
-                <span className="dsh-ig-label">{t('saveToWorkspace')}</span>
-              </label>
-              <span className="dsh-ig-hint">{t('saveToWorkspaceHint')}</span>
-            </div>
-            {saveToWorkspace ? (
-              <label className="dsh-ig-field">
-                <span className="dsh-ig-label">{t('folder')}</span>
-                <input
-                  className="dsh-ig-input"
-                  value={workspaceFolder}
-                  onChange={event => { setWorkspaceFolder(event.target.value) }}
-                  onBlur={() => { commitWorkspaceFolder() }}
-                  onKeyDown={event => { if (event.key === 'Enter') commitWorkspaceFolder() }}
-                  placeholder="dsh-image-gen"
-                  disabled={!settingsWritable}
-                />
-                <span className="dsh-ig-hint">{t('folderHint')}</span>
-              </label>
-            ) : null}
-            {workspaceMessage.length > 0 ? <p className={`dsh-ig-status${workspaceMessageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{workspaceMessage}</p> : null}
-          </div>
-          <div className="dsh-ig-section">
-            <span className="dsh-ig-section-title">{t('uiSection')}</span>
-            <div className="dsh-ig-field">
-              <label className="dsh-ig-check-row">
-                <input
-                  type="checkbox"
-                  checked={showPill}
-                  onChange={event => { toggleShowPill(event.target.checked) }}
-                  disabled={!settingsWritable}
-                />
-                <span className="dsh-ig-label">{t('showPill')}</span>
-              </label>
-              <span className="dsh-ig-hint">{t('showPillHint')}</span>
-              {uiMessage.length > 0 ? <p className={`dsh-ig-status${uiMessageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{uiMessage}</p> : null}
-            </div>
-          </div>
+          )}
         </div>
+
+        <div className="dsh-ig-section">
+          <span className="dsh-ig-section-title">Workspace</span>
+          <label className="dsh-ig-check-row">
+            <input type="checkbox" checked={saveToWorkspace} onChange={event => { setSaveToWorkspace(event.target.checked); void save('saveToWorkspace', event.target.checked) }} disabled={disabled} />
+            <span className="dsh-ig-label">Also save generated images into the session workspace</span>
+          </label>
+          {saveToWorkspace ? <label className="dsh-ig-field">
+            <span className="dsh-ig-label">Workspace folder</span>
+            <input className="dsh-ig-input" value={workspaceFolder} onChange={event => setWorkspaceFolder(event.target.value)} onBlur={() => { const next = workspaceFolder.trim(); if (next !== (value?.workspaceFolder ?? 'dsh-arya-image-gen')) void save('workspaceFolder', next) }} onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} placeholder="dsh-arya-image-gen" disabled={disabled} />
+          </label> : null}
+        </div>
+
+        <div className="dsh-ig-section">
+          <span className="dsh-ig-section-title">Interface</span>
+          <label className="dsh-ig-check-row">
+            <input type="checkbox" checked={showPill} onChange={event => { setShowPill(event.target.checked); void save('showProviderPill', event.target.checked) }} disabled={disabled} />
+            <span className="dsh-ig-label">Show the workflow switcher beside the chat input</span>
+          </label>
+        </div>
+
+        {message.length > 0 ? <p className={`dsh-ig-status${messageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{message}</p> : null}
+      </div>
     </li>
   )
+}
+
+/** Subscribe to one settings scope; re-renders whenever the host snapshot changes. */
+function useSettingsSnapshot(scope: SettingsScope<ImageSettings>) {
+  const [snapshot, setSnapshot] = useState(() => scope.getSnapshot())
+  useEffect(() => scope.subscribe(() => { setSnapshot(scope.getSnapshot()) }), [scope])
+  return snapshot
 }
 
 /** Keep the legacy Tool row for old DSH and hand modern results to the independent Chat node. */
@@ -2588,7 +1279,7 @@ export function PromotedImageResultNode(props: ImageResultNodeProps) {
 
 function PromotedResultNotice({ locale }: { locale?: LocaleService | undefined }) {
   const lang = usePluginLanguage(locale)
-  return <div className="dsh-ig-loading">{DICT[lang].resultShown}</div>
+  return <div className="dsh-ig-loading">{DICT.en.resultShown}</div>
 }
 
 function ImageResultCard({
@@ -2610,7 +1301,6 @@ function ImageResultCard({
   const activeResult = selectedRevision !== undefined ? {
     prompt: selectedRevision.prompt,
     provider: selectedRevision.provider,
-    ...(selectedRevision.channel === undefined ? {} : { channel: selectedRevision.channel }),
     model: selectedRevision.model,
     output: selectedRevision.output,
     createdAt: selectedRevision.createdAt,
@@ -2633,8 +1323,8 @@ function ImageResultCard({
   const lang = usePluginLanguage(locale)
 
   const t = (keyName: DictKey, params?: Record<string, string>): string => {
-    const dict = lang === 'en' ? DICT.en : DICT.zh
-    let text: string = dict[keyName] || DICT.zh[keyName] || keyName
+    const dict = DICT.en
+    let text: string = dict[keyName] || keyName
     if (params) {
       for (const [k, v] of Object.entries(params)) {
         text = text.replace(`{${k}}`, v)
@@ -2784,11 +1474,7 @@ function ImageResultCard({
     const controller = new AbortController()
     regenerateControllerRef.current = controller
     try {
-      const request = conversationRegenerateRequest(
-        activeResult,
-        regeneratePrompt,
-        selectedRevision === undefined ? undefined : { ratio: selectedRevision.ratio, quality: selectedRevision.quality, resolution: selectedRevision.resolution, generationQuality: selectedRevision.generationQuality, watermark: selectedRevision.watermark },
-      )
+      const request = conversationRegenerateRequest(activeResult, regeneratePrompt)
       const response = await fetch(STUDIO_ROUTE, {
         method: 'POST',
         credentials: 'same-origin',
@@ -2804,29 +1490,17 @@ function ImageResultCard({
         attachment: payload.attachment,
         prompt: payload.prompt,
         provider: payload.provider,
-        ...(payload.channel === undefined ? {} : { channel: payload.channel }),
         model: payload.model,
         output: payload.output,
         createdAt: payload.createdAt,
-        ratio: request.ratio,
-        quality: request.quality,
-        ...(request.resolution === undefined ? {} : { resolution: request.resolution }),
-        ...(request.generationQuality === undefined ? {} : { generationQuality: request.generationQuality }),
-        ...(request.watermark === undefined ? {} : { watermark: request.watermark }),
       }
       const savedOk = await saveGalleryItem({
         id: String(revision.attachment.attachmentId),
         attachment: revision.attachment,
         prompt: revision.prompt,
         provider: revision.provider,
-        ...(revision.channel === undefined ? {} : { channel: revision.channel }),
         model: revision.model,
         createdAt: revision.createdAt,
-        aspectRatio: revision.ratio,
-        imageSize: revision.quality,
-        resolution: revision.resolution,
-        generationQuality: revision.generationQuality,
-        watermark: revision.watermark,
         output: revision.output,
         ...(savedTo ? { savedTo } : {}),
         ...(sessionId ? { sessionId } : {}),
@@ -2856,7 +1530,7 @@ function ImageResultCard({
   }
 
   const canRegenerate = activeResult !== undefined
-    && (CLOUD_IMAGE_PROVIDERS as readonly string[]).includes(activeResult.provider)
+    && activeResult.provider === 'comfyui'
     && activeResult.model.trim().length > 0
   const versionTotal = revisionChain.revisions.length + 1
   const versionCurrent = revisionChain.currentIndex + 1
@@ -2981,20 +1655,3 @@ function imageResultFromBlock(block: ToolCallBlock): ImageResultPresentation | u
   }
 }
 
-function modelOf(provider: Provider, value: ImageSettings | undefined): string {
-  const stored = provider === 'comfyui'
-    ? activeComfyUIWorkflow(value ?? {})?.name
-    : isSubscriptionProvider(provider)
-      ? DEFAULT_MODELS[provider]
-      : value?.[CLOUD_MODEL_FIELDS[provider as CloudImageProvider]]
-  return typeof stored === 'string' && stored.length > 0 ? stored : DEFAULT_MODELS[provider]
-}
-
-function baseURLOf(provider: Provider, value: ImageSettings | undefined): string {
-  const stored = provider === 'comfyui'
-    ? value?.comfyuiBaseURL
-    : isSubscriptionProvider(provider)
-      ? ''
-      : value?.[CLOUD_URL_FIELDS[provider as CloudImageProvider]]
-  return typeof stored === 'string' && stored.length > 0 ? stored : DEFAULT_BASE_URLS[provider]
-}

@@ -9,7 +9,7 @@ const CLIENT_EXTERNALS = [
 ]
 
 const host: UserConfig = {
-  name: 'dsh-image-gen',
+  name: 'dsh-arya-image-gen',
   entry: ['lib/types/index.js'],
   outDir: 'lib',
   format: ['esm'],
@@ -21,7 +21,7 @@ const host: UserConfig = {
 }
 
 const client: UserConfig = {
-  name: 'dsh-image-gen/client',
+  name: 'dsh-arya-image-gen/client',
   entry: { client: 'lib/types/client/index.js' },
   outDir: 'lib',
   format: 'cjs',
@@ -44,7 +44,7 @@ const client: UserConfig = {
   },
   outputOptions: {
     entryFileNames: 'client.js',
-    banner: 'window.__ModuleLoader__.load({ id: "dsh-image-gen", factory: (require) => {',
+    banner: 'window.__ModuleLoader__.load({ id: "dsh-arya-image-gen", factory: (require) => {',
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
   },

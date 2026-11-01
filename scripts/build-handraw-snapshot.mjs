@@ -8,6 +8,11 @@
  * (repository / totalCases / categories / styles / scenes / cases). Image paths
  * stay repo-relative; the server-side image proxy resolves them against the
  * pinned upstream commit.
+ *
+ * This fork ships an English-only catalog: the script requires English inputs
+ * (`traits`/`group` in styles.json, `name_en`/`quote_en`/`prompt_en` in
+ * colors.json, and the `<!-- en -->` section of each layout markdown). Translate
+ * or extend the upstream reference data before regenerating.
  */
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -26,7 +31,12 @@ for (const file of readdirSync(join(refs, 'layouts'))) {
   layoutPrompt.set(file.replace(/\.md$/, ''), readFileSync(join(refs, 'layouts', file), 'utf8'))
 }
 
-const LAYOUT_CATEGORY_ZH = { 'social-card': '社媒卡', infographic: '信息图', 'comic-storyboard': '漫画分镜' }
+const LAYOUT_CATEGORY = { 'social-card': 'Social card', infographic: 'Infographic', 'comic-storyboard': 'Comic storyboard' }
+
+function requireEnglish(label, text) {
+  if (/[\u4e00-\u9fff\u3040-\u30ff]/.test(String(text))) throw new Error(`${label} is not English yet; translate the upstream reference data first`)
+}
+
 // Upstream ships per-style webps under images/individual, split into two
 // numbered bands; layouts/colors keep their own directories.
 function styleImage(number) {
@@ -40,23 +50,25 @@ const categories = new Set()
 const styleTags = new Set()
 
 for (const s of styles) {
+  requireEnglish(`style #${s.number} traits`, s.traits)
+  requireEnglish(`style #${s.number} group`, s.group)
   const category = s.group.split('·').slice(1).join('·').trim() || s.group
-  categories.add(`风格 · ${category}`)
+  categories.add(`Style · ${category}`)
   styleTags.add(category)
   const prompt = [
-    `手绘风格 #${s.number} · ${s.generation_name}（原参考：${s.reference}）。`,
-    `核心风格特征：${s.traits}`,
-    '使用：把"主题：……"替换为你的主题；纯图模式直接生图，图文模式可让文字参与构图；可再叠加排版图型编号与主题色编号。',
+    `Hand Drawn Style #${s.number} · ${s.generation_name} (original reference: ${s.reference}).`,
+    `Core style features: ${s.traits}`,
+    'Usage: replace "Topic: ..." with your subject; text-free mode generates directly, while image+text mode lets the wording join the composition; layer optional layout and theme-color style numbers on top.',
   ].join('\n')
   cases.push({
     id: `s-${s.number}`,
     title: `#${s.number} ${s.generation_name}`,
     image: styleImage(s.number),
-    imageAlt: `手绘风格 ${s.number} ${s.generation_name}`,
+    imageAlt: `Hand drawn style ${s.number} ${s.generation_name}`,
     sourceLabel: s.reference,
     prompt,
     promptPreview: `${s.generation_name} · ${s.traits.slice(0, 120)}`,
-    category: `风格 · ${category}`,
+    category: `Style · ${category}`,
     styles: [category],
     scenes: [],
     featured: false,
@@ -64,18 +76,18 @@ for (const s of styles) {
 }
 
 for (const l of layouts) {
-  const category = `排版 · ${LAYOUT_CATEGORY_ZH[l.category] ?? l.category}`
+  const category = `Layout · ${LAYOUT_CATEGORY[l.category] ?? l.category}`
   categories.add(category)
   styleTags.add(l.name)
   const md = layoutPrompt.get(l.id) ?? ''
-  const zh = (md.match(/<!-- zh -->\s*([\s\S]*?)(?:\n<!-- en -->|$)/) ?? [])[1]?.trim() ?? ''
   const en = (md.match(/<!-- en -->\s*([\s\S]*)$/) ?? [])[1]?.trim() ?? ''
-  const prompt = [zh, en].filter(Boolean).join('\n\n') || `排版图型 ${l.id} ${l.name}`
+  requireEnglish(`layout ${l.id}`, en || l.name)
+  const prompt = en || `Layout ${l.id} ${l.name}`
   cases.push({
     id: `l-${l.id.toLowerCase()}`,
     title: `${l.id} ${l.name}`,
     image: `/images/layouts/${l.category}s/${l.id}.webp`,
-    imageAlt: `排版图型 ${l.id} ${l.name}`,
+    imageAlt: `Layout ${l.id} ${l.name}`,
     prompt,
     promptPreview: `${l.name}（${l.name_en}）`,
     category,
@@ -86,17 +98,19 @@ for (const l of layouts) {
 }
 
 for (const c of colors) {
-  const category = `单色 · ${c.category_zh}`
+  requireEnglish(`color ${c.id}`, c.name_en)
+  const category = `Mono · ${c.category_en ?? c.category_zh}`
   categories.add(category)
+  const prompt = `Theme color ${c.id} · ${c.name_en} — ${c.quote_en ?? c.quote_zh}.\n${c.prompt_en}\nConstraints: the theme color only affects the palette; never render color names, codes, or values as text in the image.`
   cases.push({
     id: `c-${c.id.toLowerCase()}`,
-    title: `${c.id} ${c.name_zh}`,
+    title: `${c.id} ${c.name_en}`,
     image: `/images/colors/${c.id}.webp`,
-    imageAlt: `主题色 ${c.id} ${c.name_zh}`,
-    prompt: `主题色 ${c.id} · ${c.name_zh}（${c.name_en}）——${c.quote_zh}。\n${c.prompt_zh}\n${c.prompt_en}\n约束：主题色仅用于画面配色，禁止把色名、色号或色值渲染成图内文字。`,
-    promptPreview: `${c.name_zh} · ${c.quote_zh}`,
+    imageAlt: `Theme color ${c.id} ${c.name_en}`,
+    prompt,
+    promptPreview: `${c.name_en} · ${c.quote_en ?? c.quote_zh}`,
     category,
-    styles: [c.name_zh],
+    styles: [c.name_en],
     scenes: [],
     featured: false,
   })

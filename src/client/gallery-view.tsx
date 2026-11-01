@@ -324,7 +324,7 @@ function formatRelativeTime(
 function getItemRatio(item: GalleryItem): string {
   // Codex subscription may ignore its requested ratio. Filter these cards by
   // the saved image's dimensions instead of the Studio selection.
-  if (item.provider === 'chatgpt-sub' && item.attachment.width && item.attachment.height) {
+  if ((item.provider as string) === 'chatgpt-sub' && item.attachment.width && item.attachment.height) {
     const actual = item.attachment.width / item.attachment.height
     for (const [label, value] of [
       ['1:1', 1], ['16:9', 16 / 9], ['9:16', 9 / 16],
@@ -843,13 +843,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
     regenerateControllerRef.current = controller
 
     try {
-      const request = conversationRegenerateRequest(
-        previewItem,
-        regeneratePrompt,
-        previewItem.aspectRatio
-          ? { ratio: previewItem.aspectRatio, quality: previewItem.imageSize || 'standard', resolution: previewItem.resolution, generationQuality: previewItem.generationQuality, watermark: previewItem.watermark }
-          : undefined,
-      )
+      const request = conversationRegenerateRequest(previewItem, regeneratePrompt)
       if (activeWorkspace?.path) {
         request.workspaceRoot = activeWorkspace.path
       }

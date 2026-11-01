@@ -130,7 +130,12 @@ export function selectComfyUIWorkflow(
   }
   if (typeof requested !== 'string' || requested.trim().length === 0) return active.workflow
   const name = requested.trim()
+  // Imported labels drop the file extension, so callers routinely pass the file
+  // name. Accept an optional .json suffix and casing differences either way.
+  const bare = name.replace(/\.json$/i, '')
+  const same = (left: string, right: string): boolean => left.toLowerCase() === right.toLowerCase()
   const workflow = active.workflows.find(candidate => candidate.name === name)
+    ?? active.workflows.find(candidate => same(candidate.name, bare) || same(candidate.name.replace(/\.json$/i, ''), bare))
   if (workflow === undefined) {
     throw new Error(`No ComfyUI workflow named "${name}" is configured. Available workflows: ${active.workflows.map(entry => entry.name).join(', ')}.`)
   }

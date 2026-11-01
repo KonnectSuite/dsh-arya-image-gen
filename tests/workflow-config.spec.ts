@@ -62,6 +62,14 @@ describe('selectComfyUIWorkflow', () => {
   it('rejects generation when no workflow is imported', () => {
     expect(() => selectComfyUIWorkflow(resolveProvider({}))).toThrow(/import one/)
   })
+
+  it('accepts a .json suffix and different casing', () => {
+    const tolerant = resolveProvider({ comfyuiWorkflows: [{ name: 'Qwen Edit', json: WORKFLOW }] })
+    expect(selectComfyUIWorkflow(tolerant, 'Qwen Edit.json').name).toBe('Qwen Edit')
+    expect(selectComfyUIWorkflow(tolerant, 'qwen edit').name).toBe('Qwen Edit')
+    const withSuffix = resolveProvider({ comfyuiWorkflows: [{ name: 'paint.json', json: WORKFLOW }] })
+    expect(selectComfyUIWorkflow(withSuffix, 'paint').name).toBe('paint.json')
+  })
 })
 
 describe('parseComfyUIExtraArgs', () => {

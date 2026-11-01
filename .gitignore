@@ -8,3 +8,4 @@ launch-dev.cmd
 dev-instance.log
 dev-instance.err.log
 arya-comfyui-workflows.zip
+dsh-arya-image-gen/

@@ -23,6 +23,12 @@ export interface GalleryItem {
   output?: string | undefined
   /** Workflow seed reported by the ComfyUI provider. Optional so records written by older versions stay readable; the object store is schemaless, so no IndexedDB version bump is needed. */
   seed?: number | undefined
+  /** ComfyUI timing split, stored for the details panel. */
+  queueMs?: number | undefined
+  execMs?: number | undefined
+  totalMs?: number | undefined
+  queueAhead?: number | undefined
+  comfyVersion?: string | undefined
   /** Saved file path on workspace disk if savedTo was returned */
   savedTo?: string | undefined
   /** Whether this item is marked as favorite */

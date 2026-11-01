@@ -8,11 +8,36 @@ const ERROR_LIMIT = 4096
 const POLL_INTERVAL_MS = 500
 const MAX_HISTORY_BYTES = 16 * 1024 * 1024
 
+export interface ComfyUIJobTimings {
+  /** Jobs already queued ahead of this one when it was submitted. */
+  queueAhead: number
+  /** Wall time from submission until the job started executing. */
+  queueMs: number
+  /** Wall time the job spent executing before its output was history-visible. */
+  execMs: number
+  /** Submission to completion, including upload and download. */
+  totalMs: number
+}
+
 export interface GeneratedComfyUIImage {
   data: Uint8Array
   mediaType: ImageMediaType
   /** Concrete seed injected into the workflow, surfaced for provenance metadata. */
   seed: number
+  timings: ComfyUIJobTimings
+  comfyVersion?: string
+}
+
+interface ComfyUISubmission {
+  promptId: string
+  submittedAt: number
+  queueAhead: number
+}
+
+interface ComfyUIWaitResult {
+  output: ComfyUIImageOutput
+  execStartedAt?: number
+  finishedAt: number
 }
 
 /** Source image bytes a ComfyUI workflow accepts through its image input. */
@@ -27,6 +52,8 @@ interface ComfyUIJobInput {
   signal: AbortSignal
   /** Extra request headers, e.g. a reverse-proxy Authorization token. */
   headers?: Record<string, string>
+  /** ComfyUI client id; the /ws progress socket must use the same value. */
+  clientId?: string
 }
 
 /** Run one ComfyUI text-to-image workflow and return its first final image. */
@@ -37,12 +64,19 @@ export async function generateComfyUIImage(input: ComfyUIJobInput & {
 }): Promise<GeneratedComfyUIImage> {
   const seed = randomSeed()
   const workflow = prepareComfyUIWorkflow(input.workflowJson, input.prompt, seed)
-  const output = await runJob(input, async (baseURL, signal) => {
-    const promptId = await submitWorkflow(baseURL, workflow, signal)
-    const result = await waitForOutput(baseURL, promptId, signal)
-    return await downloadOutput(baseURL, result, input.maxBytes, signal)
+  const job = await runJob(input, async (baseURL, signal) => {
+    const submission = await submitWorkflow(baseURL, workflow, signal, input.headers, input.clientId)
+    const wait = await waitForOutput(baseURL, submission.promptId, signal, input.headers)
+    const image = await downloadOutput(baseURL, wait.output, input.maxBytes, signal, input.headers)
+    const comfyVersion = await comfyUIVersion(baseURL, input.headers, signal)
+    return { image, submission, wait, comfyVersion }
   })
-  return { ...output, seed }
+  return {
+    ...job.image,
+    seed,
+    timings: timingsOf(job.submission, job.wait),
+    ...(job.comfyVersion === undefined ? {} : { comfyVersion: job.comfyVersion }),
+  }
 }
 
 /** Upload one source image, run the workflow, and return its first final image. */
@@ -53,14 +87,21 @@ export async function editComfyUIImage(input: ComfyUIJobInput & {
   maxBytes: number
 }): Promise<GeneratedComfyUIImage> {
   const seed = randomSeed()
-  const output = await runJob(input, async (baseURL, signal) => {
+  const job = await runJob(input, async (baseURL, signal) => {
     const imageName = await uploadSourceImage(baseURL, input.sourceImage, signal)
     const workflow = prepareComfyUIWorkflow(input.workflowJson, input.prompt, seed, imageName)
-    const promptId = await submitWorkflow(baseURL, workflow, signal)
-    const result = await waitForOutput(baseURL, promptId, signal)
-    return await downloadOutput(baseURL, result, input.maxBytes, signal)
+    const submission = await submitWorkflow(baseURL, workflow, signal, input.headers, input.clientId)
+    const wait = await waitForOutput(baseURL, submission.promptId, signal, input.headers)
+    const image = await downloadOutput(baseURL, wait.output, input.maxBytes, signal, input.headers)
+    const comfyVersion = await comfyUIVersion(baseURL, input.headers, signal)
+    return { image, submission, wait, comfyVersion }
   })
-  return { ...output, seed }
+  return {
+    ...job.image,
+    seed,
+    timings: timingsOf(job.submission, job.wait),
+    ...(job.comfyVersion === undefined ? {} : { comfyVersion: job.comfyVersion }),
+  }
 }
 
 /** Share abort forwarding, the single timeout, and error normalization. */
@@ -122,11 +163,12 @@ function uploadFilename(mediaType: ImageMediaType): string {
   return `dsh-image-gen-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${extension}`
 }
 
-async function submitWorkflow(baseURL: URL, workflow: Record<string, unknown>, signal: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<string> {
+async function submitWorkflow(baseURL: URL, workflow: Record<string, unknown>, signal: AbortSignal, extraHeaders: Record<string, string> = {}, clientId?: string): Promise<ComfyUISubmission> {
+  const submittedAt = Date.now()
   const response = await fetch(endpoint(baseURL, 'prompt'), {
     method: 'POST', redirect: 'error', signal,
     headers: { 'content-type': 'application/json', accept: 'application/json', ...extraHeaders },
-    body: JSON.stringify({ prompt: workflow }),
+    body: JSON.stringify(clientId === undefined ? { prompt: workflow } : { prompt: workflow, client_id: clientId }),
   })
   const text = await readBoundedText(response, ERROR_LIMIT)
   if (!response.ok) throw new Error(`ComfyUI rejected the workflow (${response.status}): ${redactSecrets(text)}`)
@@ -134,12 +176,45 @@ async function submitWorkflow(baseURL: URL, workflow: Record<string, unknown>, s
   if (typeof payload.prompt_id !== 'string' || payload.prompt_id.length === 0) {
     throw new Error(`ComfyUI /prompt returned no prompt_id: ${redactSecrets(text)}`)
   }
-  return payload.prompt_id
+  const queueAhead = await queueAheadOf(baseURL, payload.prompt_id, extraHeaders, signal)
+  return { promptId: payload.prompt_id, submittedAt, queueAhead }
 }
 
-async function waitForOutput(baseURL: URL, promptId: string, signal: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<ComfyUIImageOutput> {
+/** Best-effort /queue read: absent on older servers, never fails a generation. */
+async function queueSnapshot(baseURL: URL, extraHeaders: Record<string, string>, signal: AbortSignal): Promise<{ running: string[]; pending: string[] }> {
+  try {
+    const response = await fetch(endpoint(baseURL, 'queue'), { redirect: 'error', signal, headers: { accept: 'application/json', ...extraHeaders } })
+    if (!response.ok) return { running: [], pending: [] }
+    const payload = parseJsonRecord(await readBoundedText(response, ERROR_LIMIT), 'ComfyUI /queue returned invalid JSON')
+    const ids = (value: unknown): string[] => Array.isArray(value)
+      ? value.flatMap(entry => Array.isArray(entry) && typeof entry[1] === 'string' ? [entry[1]] : [])
+      : []
+    return { running: ids(payload.queue_running), pending: ids(payload.queue_pending) }
+  } catch {
+    return { running: [], pending: [] }
+  }
+}
+
+async function queueAheadOf(baseURL: URL, promptId: string, extraHeaders: Record<string, string>, signal: AbortSignal): Promise<number> {
+  const snapshot = await queueSnapshot(baseURL, extraHeaders, signal)
+  if (snapshot.running.includes(promptId)) return 0
+  const index = snapshot.pending.indexOf(promptId)
+  return index < 0 ? snapshot.pending.length : index
+}
+
+async function waitForOutput(baseURL: URL, promptId: string, signal: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<ComfyUIWaitResult> {
+  let execStartedAt: number | undefined
+  let lastQueueProbe = 0
   for (;;) {
     signal.throwIfAborted()
+    // Detect the transition from queued to executing so the result can report
+    // queue wait separately from execution. Older servers without /queue simply
+    // fold the wait into execution time.
+    if (execStartedAt === undefined && Date.now() - lastQueueProbe >= 1_000) {
+      lastQueueProbe = Date.now()
+      const snapshot = await queueSnapshot(baseURL, extraHeaders, signal)
+      if (snapshot.running.includes(promptId)) execStartedAt = Date.now()
+    }
     const response = await fetch(endpoint(baseURL, `history/${encodeURIComponent(promptId)}`), {
       redirect: 'error', signal, headers: { accept: 'application/json', ...extraHeaders },
     })
@@ -153,10 +228,42 @@ async function waitForOutput(baseURL: URL, promptId: string, signal: AbortSignal
         throw new Error(`ComfyUI workflow failed: ${redactSecrets(JSON.stringify(status.messages ?? status)).slice(0, ERROR_LIMIT)}`)
       }
       const output = firstOutputImage(entry.outputs)
-      if (output !== undefined) return output
+      if (output !== undefined) {
+        return { output, finishedAt: Date.now(), ...(execStartedAt === undefined ? {} : { execStartedAt }) }
+      }
       if (status?.completed === true) throw new Error('ComfyUI workflow completed without an output image')
     }
     await delay(POLL_INTERVAL_MS, signal)
+  }
+}
+
+function timingsOf(submission: ComfyUISubmission, wait: ComfyUIWaitResult): ComfyUIJobTimings {
+  const start = wait.execStartedAt ?? submission.submittedAt
+  return {
+    queueAhead: submission.queueAhead,
+    queueMs: Math.max(0, start - submission.submittedAt),
+    execMs: Math.max(0, wait.finishedAt - start),
+    totalMs: Math.max(0, wait.finishedAt - submission.submittedAt),
+  }
+}
+
+const versionCache = new Map<string, { version?: string; at: number }>()
+
+/** Cached ComfyUI version for provenance; a missing answer is not an error. */
+async function comfyUIVersion(baseURL: URL, extraHeaders: Record<string, string> | undefined, signal: AbortSignal): Promise<string | undefined> {
+  const key = baseURL.origin
+  const cached = versionCache.get(key)
+  if (cached !== undefined && Date.now() - cached.at < 30_000) return cached.version
+  try {
+    const response = await fetch(endpoint(baseURL, 'system_stats'), { redirect: 'error', signal, headers: { accept: 'application/json', ...extraHeaders } })
+    if (!response.ok) return cached?.version
+    const payload = parseJsonRecord(await readBoundedText(response, ERROR_LIMIT), 'ComfyUI /system_stats returned invalid JSON')
+    const version = record(payload.system)?.comfyui_version
+    const value = typeof version === 'string' ? version : undefined
+    versionCache.set(key, { at: Date.now(), ...(value === undefined ? {} : { version: value }) })
+    return value
+  } catch {
+    return cached?.version
   }
 }
 

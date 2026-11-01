@@ -117,6 +117,7 @@ export function parseStudioGenerateRequest(value: unknown): StudioGenerateReques
   const references = rawReferences.map(parseReference)
   if (input.mode === 'edit' && references.length === 0) throw new Error('Image-to-image editing needs at least one reference image.')
   if (references.length > 5) throw new Error('At most 5 reference images are supported.')
+  const jobId = typeof input.jobId === 'string' && /^[A-Za-z0-9-]{8,72}$/.test(input.jobId) ? input.jobId : undefined
   const workspaceRoot = typeof input.workspaceRoot === 'string' && input.workspaceRoot.trim().length > 0
     ? input.workspaceRoot.trim()
     : undefined
@@ -133,6 +134,7 @@ export function parseStudioGenerateRequest(value: unknown): StudioGenerateReques
     model,
     prompt,
     ...(count !== undefined ? { count } : {}),
+    ...(jobId === undefined ? {} : { jobId }),
     ...(references.length > 0 ? { references, reference: references[0] } : {}),
     ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
   }

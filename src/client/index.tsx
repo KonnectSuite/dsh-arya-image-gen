@@ -1378,6 +1378,9 @@ function ImageResultCard({
       output: result.output,
       ...(result.savedTo ? { savedTo: result.savedTo } : {}),
       ...(result.seed !== undefined ? { seed: result.seed } : {}),
+      ...(result.queueMs !== undefined ? { queueMs: result.queueMs, execMs: result.execMs, totalMs: result.totalMs } : {}),
+      ...(result.queueAhead !== undefined ? { queueAhead: result.queueAhead } : {}),
+      ...(result.comfyVersion !== undefined ? { comfyVersion: result.comfyVersion } : {}),
       ...(result.sourceAttachmentIds !== undefined && result.sourceAttachmentIds.length > 0
         ? { sourceAttachmentIds: [...result.sourceAttachmentIds] }
         : {}),
@@ -1681,6 +1684,11 @@ function imageResultFromBlock(block: ToolCallBlock): ImageResultPresentation | u
     output: typeof meta?.output === 'string' ? meta.output : '',
     ...(typeof meta?.savedTo === 'string' ? { savedTo: meta.savedTo } : {}),
     ...(typeof meta?.seed === 'number' ? { seed: meta.seed } : {}),
+    ...(typeof meta?.queueMs === 'number' && typeof meta?.execMs === 'number' && typeof meta?.totalMs === 'number'
+      ? { queueMs: meta.queueMs, execMs: meta.execMs, totalMs: meta.totalMs }
+      : {}),
+    ...(typeof meta?.queueAhead === 'number' ? { queueAhead: meta.queueAhead } : {}),
+    ...(typeof meta?.comfyVersion === 'string' ? { comfyVersion: meta.comfyVersion } : {}),
     ...(sourceIds !== undefined && sourceIds.length > 0 ? { sourceAttachmentIds: sourceIds } : {}),
   }
 }

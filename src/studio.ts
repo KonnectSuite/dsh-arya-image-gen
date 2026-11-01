@@ -3,6 +3,7 @@ import type { ImageAttachmentRef, ImageMediaType, StoredImageAttachment } from '
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveProvider, selectComfyUIWorkflow, type Config } from './config.js'
 import { editComfyUIImage, generateComfyUIImage } from './comfyui.js'
+import { comfyProgress } from './comfyui-progress.js'
 import { COMFYUI_IMAGE_PLACEHOLDER, hasComfyUIImagePlaceholder } from './comfyui-workflow.js'
 import {
   DEFAULT_COMFYUI_TIMEOUT_MS,
@@ -58,6 +59,25 @@ export async function generateFromStudio(
   signal: AbortSignal,
   fallbackWorkspaceRoot?: string | undefined,
 ): Promise<StudioGenerateResponse> {
+  try {
+    return await runStudioGeneration(ctx, config, input, signal, fallbackWorkspaceRoot)
+  } catch (error) {
+    if (input.jobId !== undefined) comfyProgress.finish(input.jobId, 'error', messageOf(error))
+    throw error
+  }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function runStudioGeneration(
+  ctx: Context,
+  config: Config,
+  input: StudioGenerateRequest,
+  signal: AbortSignal,
+  fallbackWorkspaceRoot?: string | undefined,
+): Promise<StudioGenerateResponse> {
   const active = resolveProvider(config)
   if (active.workflows.length === 0) {
     throw new Error('No ComfyUI workflows are imported. Import an API-format workflow JSON in Settings > Plugins > Arya Image Gen.')
@@ -76,6 +96,13 @@ export async function generateFromStudio(
     : []
   const startedAt = Date.now()
   const count = input.count ?? 1
+  const jobId = input.jobId
+  if (jobId !== undefined) {
+    comfyProgress.ensure(jobId, { baseURL: active.baseURL, headers: active.headers, workflowJson: workflow.json })
+  }
+  const finishJob = (phase: 'done' | 'error' | 'cancelled', error?: string): void => {
+    if (jobId !== undefined) comfyProgress.finish(jobId, phase, error)
+  }
 
   const generateSingle = async (index: number): Promise<StudioGeneratedItem> => {
     const generated = input.mode === 'edit'
@@ -85,6 +112,7 @@ export async function generateFromStudio(
         workflowJson: workflow.json,
         prompt: promptWithPreset(workflow, input.prompt),
         sourceImage: { data: sourceImages[0]!.data, mediaType: sourceImages[0]!.mediaType },
+        ...(jobId === undefined ? {} : { clientId: jobId }),
         timeoutMs: active.timeoutMs,
         maxBytes: ctx.attachments.imageLimits.maxImageBytes,
         signal,
@@ -94,6 +122,7 @@ export async function generateFromStudio(
         headers: active.headers,
         workflowJson: workflow.json,
         prompt: promptWithPreset(workflow, input.prompt),
+        ...(jobId === undefined ? {} : { clientId: jobId }),
         timeoutMs: active.timeoutMs,
         maxBytes: ctx.attachments.imageLimits.maxImageBytes,
         signal,
@@ -108,15 +137,25 @@ export async function generateFromStudio(
     })
     // Studio generation is temporary on canvas; workspace persistence happens
     // when the user collects the result into the gallery.
+    const timings = generated.timings ?? { queueAhead: 0, queueMs: 0, execMs: 0, totalMs: 0 }
     return {
       attachment,
-      output: `${workflow.name}, seed ${String(generated.seed)}`,
+      output: [workflow.name, `${String(attachment.width)}x${String(attachment.height)}`, `seed ${String(generated.seed)}`,
+        `queued ${seconds(timings.queueMs)}`, `ran ${seconds(timings.execMs)}`,
+        ...(generated.comfyVersion === undefined ? [] : [`ComfyUI ${generated.comfyVersion}`])].join(' · '),
       seed: generated.seed,
+      workflow: workflow.name,
+      queueMs: timings.queueMs,
+      execMs: timings.execMs,
+      totalMs: timings.totalMs,
+      queueAhead: timings.queueAhead,
+      ...(generated.comfyVersion === undefined ? {} : { comfyVersion: generated.comfyVersion }),
     }
   }
 
   if (count === 1) {
     const single = await generateSingle(0)
+    finishJob('done')
     return {
       attachment: single.attachment,
       output: single.output,
@@ -156,6 +195,7 @@ export async function generateFromStudio(
   }
 
   const first = successes[0]!
+  finishJob('done')
   return {
     attachment: first.attachment,
     output: first.output,
@@ -199,6 +239,10 @@ export async function runPool<T>(
   )
   await Promise.all(workers)
   return results
+}
+
+function seconds(milliseconds: number): string {
+  return `${(milliseconds / 1000).toFixed(1)}s`
 }
 
 function promptWithPreset(workflow: { presetPrompt?: string }, prompt: string): string {

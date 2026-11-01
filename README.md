@@ -78,6 +78,24 @@ The settings card can start, stop, and restart the local ComfyUI process:
 
 The live status chip shows the ComfyUI version, GPU, and available VRAM when the server is running.
 
+### Generation details and live progress
+
+Every finished image reports provenance, for the model and the UI alike:
+
+```
+Qwen_Image_2_1_Turbo_Square_1024 · 1024x1024 · seed 1944480124 · queued 0.0s · ran 5.6s · total 5.6s · ComfyUI 0.37.4
+```
+
+The Studio panel streams progress for a running job:
+
+- **Queue** position and queue wait, measured from `/queue`.
+- **Node** label from the workflow (`SamplerCustomAdvanced`, `TextEncodeQwenImage21`, ...) and its step counter (`3/8`).
+- **Elapsed** time, updated about once a second.
+- **Preview thumbnail** when ComfyUI emits latent preview frames. Many installations do not enable them; the panel simply shows progress without a thumbnail.
+- **Cancel** now removes the prompt from ComfyUI's queue instead of leaving it running.
+
+Progress comes from ComfyUI's `/ws` socket and is advisory: if a proxy blocks the WebSocket upgrade (header-authenticated proxies often do), generation still works and the panel falls back to an indeterminate bar with elapsed time. Inline progress inside the chat transcript is not available: DSH's Chat target renders fixed conversation node kinds, so the live view lives in the Studio panel while the chat card stays a result card.
+
 ### Remote ComfyUI
 
 A server on another machine works with nothing running locally:

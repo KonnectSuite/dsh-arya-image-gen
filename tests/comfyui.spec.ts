@@ -123,14 +123,37 @@ describe('ComfyUI workflow preparation', () => {
   })
 })
 
+function routeFetch(handlers: {
+  prompt?: () => Response
+  history?: () => Response
+  view?: () => Response
+  upload?: () => Response
+  queue?: () => Response
+} = {}): ReturnType<typeof vi.fn> {
+  return vi.fn(async (input: string | URL | Request) => {
+    const url = String(input)
+    if (url.endsWith('/prompt')) return handlers.prompt?.() ?? new Response('{}', { status: 200 })
+    if (url.includes('/upload/image')) return handlers.upload?.() ?? new Response('{}', { status: 200 })
+    if (url.includes('/history/')) return handlers.history?.() ?? new Response('{}', { status: 200 })
+    if (url.includes('/view')) return handlers.view?.() ?? new Response(new Uint8Array([1]), { status: 200 })
+    if (url.endsWith('/queue')) return handlers.queue?.() ?? new Response(JSON.stringify({ queue_running: [], queue_pending: [] }), { status: 200 })
+    if (url.endsWith('/system_stats')) return new Response(JSON.stringify({ system: { comfyui_version: '0.37.4' } }), { status: 200 })
+    return new Response('{}', { status: 200 })
+  })
+}
+
+function urlsOf(fetchMock: ReturnType<typeof vi.fn>): string[] {
+  return fetchMock.mock.calls.map(call => String(call[0]))
+}
+
 describe('ComfyUI image generation', () => {
   beforeEach(() => { vi.restoreAllMocks() })
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
   it('submits, polls, downloads, and returns the first final output image', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: 'job-1' }), { status: 200, headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
+    const fetchMock = routeFetch({
+      prompt: () => new Response(JSON.stringify({ prompt_id: 'job-1' }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      history: () => new Response(JSON.stringify({
         'job-1': {
           status: { status_str: 'success', completed: true },
           outputs: {
@@ -138,8 +161,10 @@ describe('ComfyUI image generation', () => {
             save: { images: [{ filename: 'final.png', subfolder: 'images', type: 'output' }] },
           },
         },
-      }), { status: 200, headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/png' } }))
+      }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      view: () => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/png' } }),
+      queue: () => new Response(JSON.stringify({ queue_running: [[0, 'job-1']], queue_pending: [] }), { status: 200 }),
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await generateComfyUIImage(options())
@@ -148,8 +173,10 @@ describe('ComfyUI image generation', () => {
     expect(result.seed).toBeTypeOf('number')
     const submitted = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body)) as { prompt: { 6: { inputs: { text: string } } } }
     expect(submitted.prompt[6].inputs.text).toBe('rainy neon street')
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe('http://127.0.0.1:8188/history/job-1')
-    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/view?filename=final.png&subfolder=images&type=output')
+    expect(urlsOf(fetchMock)).toContain('http://127.0.0.1:8188/history/job-1')
+    expect(urlsOf(fetchMock).find(url => url.includes('/view'))).toContain('filename=final.png&subfolder=images&type=output')
+    expect(result.timings.queueAhead).toBe(0)
+    expect(result.comfyVersion).toBe('0.37.4')
   })
 
   it('reports workflow validation errors returned by ComfyUI', async () => {
@@ -163,20 +190,22 @@ describe('ComfyUI image generation', () => {
   })
 
   it('surfaces a failed ComfyUI job instead of waiting until timeout', async () => {
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: 'job-failed' }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
+    vi.stubGlobal('fetch', routeFetch({
+      prompt: () => new Response(JSON.stringify({ prompt_id: 'job-failed' }), { status: 200 }),
+      history: () => new Response(JSON.stringify({
         'job-failed': { status: { status_str: 'error', completed: true, messages: ['node execution failed'] } },
-      }), { status: 200 })))
+      }), { status: 200 }),
+    }))
     await expect(generateComfyUIImage(options())).rejects.toThrow('ComfyUI workflow failed')
   })
 
   it('reports a completed job that has no image output', async () => {
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: 'job-empty' }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
+    vi.stubGlobal('fetch', routeFetch({
+      prompt: () => new Response(JSON.stringify({ prompt_id: 'job-empty' }), { status: 200 }),
+      history: () => new Response(JSON.stringify({
         'job-empty': { status: { status_str: 'success', completed: true }, outputs: {} },
-      }), { status: 200 })))
+      }), { status: 200 }),
+    }))
     await expect(generateComfyUIImage(options())).rejects.toThrow('completed without an output image')
   })
 
@@ -191,9 +220,10 @@ describe('ComfyUI image generation', () => {
 
   it('enforces one timeout across submission, polling, and download', async () => {
     vi.useFakeTimers()
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: 'job-slow' }), { status: 200 }))
-      .mockImplementation(async () => new Response('{}', { status: 200 })))
+    vi.stubGlobal('fetch', routeFetch({
+      prompt: () => new Response(JSON.stringify({ prompt_id: 'job-slow' }), { status: 200 }),
+      history: () => new Response('{}', { status: 200 }),
+    }))
 
     const pending = generateComfyUIImage(options({ timeoutMs: 1_000 }))
     const assertion = expect(pending).rejects.toThrow('timed out after 1000 ms')
@@ -207,16 +237,17 @@ describe('ComfyUI image editing', () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
   function editFetchMock(uploadResponse: Response): ReturnType<typeof vi.fn> {
-    return vi.fn()
-      .mockResolvedValueOnce(uploadResponse)
-      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: 'job-1' }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
+    return routeFetch({
+      upload: () => uploadResponse,
+      prompt: () => new Response(JSON.stringify({ prompt_id: 'job-1' }), { status: 200 }),
+      history: () => new Response(JSON.stringify({
         'job-1': {
           status: { status_str: 'success', completed: true },
           outputs: { save: { images: [{ filename: 'final.png', subfolder: '', type: 'output' }] } },
         },
-      }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(new Uint8Array([7, 8, 9]), { status: 200, headers: { 'content-type': 'image/png' } }))
+      }), { status: 200 }),
+      view: () => new Response(new Uint8Array([7, 8, 9]), { status: 200, headers: { 'content-type': 'image/png' } }),
+    })
   }
 
   it('uploads the source image, injects its stored name, and returns the edited image', async () => {
@@ -236,8 +267,8 @@ describe('ComfyUI image editing', () => {
     }
     expect(submitted.prompt[1].inputs.image).toBe('source.png')
     expect(submitted.prompt[6].inputs.text).toBe('cyberpunk restyle')
-    expect(String(fetchMock.mock.calls[2]?.[0])).toBe('http://127.0.0.1:8188/history/job-1')
-    expect(String(fetchMock.mock.calls[3]?.[0])).toContain('/view?filename=final.png')
+    expect(urlsOf(fetchMock)).toContain('http://127.0.0.1:8188/history/job-1')
+    expect(urlsOf(fetchMock).find(url => url.includes('/view'))).toContain('filename=final.png')
   })
 
   it('joins the subfolder ComfyUI stored the upload under', async () => {

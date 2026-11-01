@@ -8,10 +8,10 @@ import { Config, resolveProvider, selectComfyUIWorkflow, type ImageProvider } fr
 import { CanvasMirror } from './canvas-state.js'
 import { serveCanvasState } from './canvas-state-route.js'
 import { serveCanvasAsset } from './canvas-asset-route.js'
-import { CANVAS_ASSET_ROUTE, COMFYUI_SERVER_ROUTE } from './shared.js'
+import { CANVAS_ASSET_ROUTE, COMFYUI_PROGRESS_ROUTE, COMFYUI_SERVER_ROUTE } from './shared.js'
 import { registerCanvasTools, resolveCanvasSelectionReferences } from './canvas-tools.js'
 import { comfyUIServerConfigOf, ComfyUIServerManager } from './comfyui-server.js'
-import { editComfyUIImage, generateComfyUIImage } from './comfyui.js'
+import { editComfyUIImage, generateComfyUIImage, type ComfyUIJobTimings } from './comfyui.js'
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
@@ -21,6 +21,8 @@ import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspirati
 import { describeStudio, generateFromStudio } from './studio.js'
 import { serveStudio } from './studio-route.js'
 import { serveComfyUIServer } from './comfyui-server-route.js'
+import { serveComfyUIProgress } from './progress-route.js'
+import { comfyProgress } from './comfyui-progress.js'
 import { describeSettingsHealth, serveSettingsHealth } from './settings-health.js'
 import { SETTINGS_HEALTH_ROUTE, type SettingsHealth } from './shared.js'
 import { deleteImageFromWorkspace, getDshWorkspaceRoots, getDshWorkspacesFull, saveImageToWorkspace } from './workspace-save.js'
@@ -31,7 +33,7 @@ export { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMet
 export { IMPORT_ROUTE } from './shared.js'
 export { STUDIO_ROUTE } from './shared.js'
 export { INSPIRATION_ROUTE } from './shared.js'
-export { COMFYUI_SERVER_ROUTE } from './shared.js'
+export { COMFYUI_SERVER_ROUTE, COMFYUI_PROGRESS_ROUTE } from './shared.js'
 export { CANVAS_STATE_ROUTE } from './shared.js'
 
 export const name = 'dsh-image-gen'
@@ -46,6 +48,17 @@ interface GeneratedValue {
   saveError?: string
   /** Concrete workflow seed, exposed by the ComfyUI provider for provenance. */
   seed?: number
+  /** Pixel dimensions and encoded size of the attached image. */
+  width?: number
+  height?: number
+  bytes?: number
+  /** Timing split reported by the ComfyUI job, in milliseconds. */
+  queueMs?: number
+  execMs?: number
+  totalMs?: number
+  /** Jobs queued ahead of this one at submission. */
+  queueAhead?: number
+  comfyVersion?: string
 }
 
 /** Capped prompt hits for the find_inspiration tool; `total` counts all matches. */
@@ -166,6 +179,18 @@ export function apply(ctx: Context, config: Config = {}): void {
       }),
     }), 'dsh-image-gen: comfyui server route')
     webCtx.effect(() => webCtx.webServer.register({
+      kind: 'prefix', path: COMFYUI_PROGRESS_ROUTE,
+      handler: (req, res) => {
+        const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
+        return serveComfyUIProgress(req, res, {
+          snapshot: jobId => comfyProgress.snapshot(jobId),
+          subscribe: (jobId, listener) => comfyProgress.subscribe(jobId, listener),
+          preview: jobId => comfyProgress.preview(jobId),
+          cancel: jobId => comfyProgress.cancel(jobId),
+        }, pathname.slice(COMFYUI_PROGRESS_ROUTE.length))
+      },
+    }), 'dsh-image-gen: comfyui progress route')
+    webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact', path: CANVAS_STATE_ROUTE,
       handler: (req, res) => serveCanvasState(req, res, {
         mirror: canvasMirror,
@@ -268,7 +293,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       maxBytes: ctx.attachments.imageLimits.maxImageBytes,
       signal: exec.signal,
     })
-    return saveGenerated(ctx, generated, 'comfyui', workflow.name, `${workflow.name}, seed ${String(generated.seed)}`, current(), exec, knownWorkspaceRoots)
+    return saveGenerated(ctx, generated, 'comfyui', workflow.name, workflow.name, current(), exec, knownWorkspaceRoots)
   }
 
   ctx.tools.register(defineTool({
@@ -299,7 +324,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             attachment: { type: 'object', required: true, additionalProperties: false, properties: {
               attachmentId: { type: 'string', required: true }, mediaType: { type: 'string', required: true }, bytes: { type: 'integer', required: true }, width: { type: 'integer', required: true }, height: { type: 'integer', required: true }, name: { type: 'string' }, originalDimensions: { type: 'object', additionalProperties: false, properties: { width: { type: 'integer', required: true }, height: { type: 'integer', required: true } } },
             } },
-            provider: { type: 'string', required: true }, model: { type: 'string', required: true }, output: { type: 'string', required: true }, savedTo: { type: 'string' }, saveError: { type: 'string' }, seed: { type: 'integer' }, prompt: { type: 'string', required: true },
+            provider: { type: 'string', required: true }, model: { type: 'string', required: true }, output: { type: 'string', required: true }, savedTo: { type: 'string' }, saveError: { type: 'string' }, seed: { type: 'integer' }, width: { type: 'integer' }, height: { type: 'integer' }, bytes: { type: 'integer' }, queueMs: { type: 'integer' }, execMs: { type: 'integer' }, totalMs: { type: 'integer' }, queueAhead: { type: 'integer' }, comfyVersion: { type: 'string' }, prompt: { type: 'string', required: true },
           } } },
           failures: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
             index: { type: 'integer', required: true }, prompt: { type: 'string', required: true }, error: { type: 'string', required: true },
@@ -404,7 +429,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         maxBytes: ctx.attachments.imageLimits.maxImageBytes,
         signal: exec.signal,
       })
-      return saveGenerated(ctx, generated, 'comfyui', workflow.name, `${workflow.name}, seed ${String(generated.seed)}`, current(), exec, knownWorkspaceRoots)
+      return saveGenerated(ctx, generated, 'comfyui', workflow.name, workflow.name, current(), exec, knownWorkspaceRoots)
     },
     presentResult: (_args, result) => imagePresentation(result),
   }))
@@ -455,7 +480,7 @@ function imageOutput(verb: 'Generated' | 'Edited') {
         attachment: { type: 'object', required: true, additionalProperties: false, properties: {
           attachmentId: { type: 'string', required: true }, mediaType: { type: 'string', required: true }, bytes: { type: 'integer', required: true }, width: { type: 'integer', required: true }, height: { type: 'integer', required: true }, name: { type: 'string' }, originalDimensions: { type: 'object', additionalProperties: false, properties: { width: { type: 'integer', required: true }, height: { type: 'integer', required: true } } },
         } },
-        provider: { type: 'string', required: true }, model: { type: 'string', required: true }, output: { type: 'string', required: true }, savedTo: { type: 'string' }, saveError: { type: 'string' }, seed: { type: 'integer' },
+        provider: { type: 'string', required: true }, model: { type: 'string', required: true }, output: { type: 'string', required: true }, savedTo: { type: 'string' }, saveError: { type: 'string' }, seed: { type: 'integer' }, width: { type: 'integer' }, height: { type: 'integer' }, bytes: { type: 'integer' }, queueMs: { type: 'integer' }, execMs: { type: 'integer' }, totalMs: { type: 'integer' }, queueAhead: { type: 'integer' }, comfyVersion: { type: 'string' },
       },
     },
     render: (_args: unknown, value: GeneratedValue) => {
@@ -471,6 +496,9 @@ function imageOutput(verb: 'Generated' | 'Edited') {
       ...(verb === 'Edited' ? { operation: 'edit' } : {}),
       ...(typeof value.savedTo === 'string' ? { savedTo: value.savedTo } : {}),
       ...(typeof value.seed === 'number' ? { seed: value.seed } : {}),
+      ...(typeof value.queueMs === 'number' ? { queueMs: value.queueMs, execMs: value.execMs, totalMs: value.totalMs } : {}),
+      ...(typeof value.queueAhead === 'number' ? { queueAhead: value.queueAhead } : {}),
+      ...(value.comfyVersion === undefined ? {} : { comfyVersion: value.comfyVersion }),
       prompt: (args as { prompt: string }).prompt,
     }),
   } as const
@@ -484,12 +512,27 @@ function attachmentMeta(ref: ImageAttachmentRef) {
   }
 }
 
+/** Model- and user-visible provenance for one finished image. */
+function provenanceLine(prefix: string, attachment: ImageAttachmentRef, seed?: number, timings?: ComfyUIJobTimings, comfyVersion?: string): string {
+  const parts = [prefix, `${String(attachment.width)}x${String(attachment.height)}`]
+  if (seed !== undefined) parts.push(`seed ${String(seed)}`)
+  if (timings !== undefined) {
+    parts.push(`queued ${seconds(timings.queueMs)}`, `ran ${seconds(timings.execMs)}`, `total ${seconds(timings.totalMs)}`)
+  }
+  if (comfyVersion !== undefined) parts.push(`ComfyUI ${comfyVersion}`)
+  return parts.join(' · ')
+}
+
+function seconds(milliseconds: number): string {
+  return `${(milliseconds / 1000).toFixed(1)}s`
+}
+
 async function saveGenerated(
   ctx: Context,
-  generated: { data: Uint8Array; mediaType: ImageAttachmentRef['mediaType']; seed?: number },
+  generated: { data: Uint8Array; mediaType: ImageAttachmentRef['mediaType']; seed?: number; timings?: ComfyUIJobTimings; comfyVersion?: string },
   provider: ImageProvider,
   model: string,
-  output: string,
+  outputPrefix: string,
   config: Config,
   exec: { agent?: { session: { header: { cwd?: string } } }; signal: AbortSignal },
   knownRoots?: Set<string>,
@@ -497,8 +540,17 @@ async function saveGenerated(
   if (!ctx.attachments.imageLimits.mediaTypes.includes(generated.mediaType)) throw new Error(`This DSH deployment does not accept ${generated.mediaType} generated images`)
   const attachment = await ctx.attachments.saveImage({ data: generated.data, mediaType: generated.mediaType, name: 'generated-image' })
   const value: GeneratedValue = {
-    attachment, provider, model, output,
+    attachment, provider, model,
+    output: provenanceLine(outputPrefix, attachment, generated.seed, generated.timings, generated.comfyVersion),
+    width: attachment.width, height: attachment.height, bytes: attachment.bytes,
     ...(typeof generated.seed === 'number' ? { seed: generated.seed } : {}),
+    ...(generated.timings === undefined ? {} : {
+      queueMs: generated.timings.queueMs,
+      execMs: generated.timings.execMs,
+      totalMs: generated.timings.totalMs,
+      queueAhead: generated.timings.queueAhead,
+    }),
+    ...(generated.comfyVersion === undefined ? {} : { comfyVersion: generated.comfyVersion }),
   }
   if (config.saveToWorkspace === false) return value
   const workspaceRoot = exec.agent?.session.header.cwd

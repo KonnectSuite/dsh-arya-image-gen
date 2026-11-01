@@ -32,11 +32,12 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import { DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, PROVIDER_DEFAULT_QUALITY, isSubscriptionProvider, pickStudioWorkflow, studioModelForMode, studioModelOptionsForMode, studioTargetKey, studioWatermarkCapability, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
+import { COMFYUI_PROGRESS_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, PROVIDER_DEFAULT_QUALITY, isSubscriptionProvider, pickStudioWorkflow, studioModelForMode, studioModelOptionsForMode, studioTargetKey, studioWatermarkCapability, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
 import { deleteGalleryItem, getGalleryItems, saveGalleryItem, subscribeGallery, toggleFavoriteGalleryItem, type GalleryItem, saveFavoritePrompt, getFavoritePrompts, deleteFavoritePrompt, subscribeFavorites, addFavoriteFolder, getFavoriteFolders, deleteFavoriteFolder, moveFavoritePrompt, updateFavoritePrompt, type FavoritePrompt, type FavoriteFolder } from './gallery-store.js'
 import { evictAttachmentCache, fetchAttachmentBlob } from './image-cache.js'
 import { copyImageBlob, downloadBlobUrl, formatRelativeTime } from './browser-image-utils.js'
 import { buildComparisonTargets, comparisonOptionUnion, comparisonOutputOptions, initialComparisonProviders } from './multi-model-compare.js'
+import type { ComfyUIJobSnapshot } from '../comfyui-progress.js'
 import { clearStudioTlCanvases, StudioTlCanvas } from './tl/studio-tl-canvas.js'
 import { pushTlLandings } from './tl/tl-canvas-bridge.js'
 import { GalleryCanvasButton } from './tl/gallery-canvas-button.js'
@@ -70,7 +71,7 @@ const COPY = {
     favPromptApplied: 'Prompt applied', favRefApplied: 'Reference added', favSaveFailed: 'Could not save; please retry',
     generate: 'Text to image', edit: 'Image to image', reference: 'Reference image', optional: 'optional', upload: 'Click or drop images here',
     uploadHint: 'JPG / PNG / WebP / GIF, up to 10MB (max 5)', prompt: 'Prompt', clear: 'Clear', promptPlaceholder: 'Describe the subject, composition, style, lighting, and exact text… (Ctrl+Enter to generate)',
-    provider: 'Provider', model: 'Model', workflow: 'Workflow', workflowCount: '{count} workflows', noWorkflows: 'No workflows', noWorkflowHint: 'Import an API-format workflow JSON in Settings > Plugins > Arya Image Gen to start generating.', workflowEditUnsupported: 'This workflow has no image input; pick an edit workflow for image-to-image.', noEditWorkflow: 'No edit-capable workflow is imported. Add an image input placeholder to a workflow, or import an edit workflow, in Settings > Plugins > Arya Image Gen.', autoWorkflowHint: 'Chosen automatically for the mode; open to override for this session.', ratio: 'Aspect ratio', quality: 'Quality', subscriptionParameterHint: 'The selected aspect ratio is automatically added to the generation prompt. ChatGPT still determines the final dimensions and quality; check the generated result.', subscriptionRatioMismatch: 'ChatGPT subscription returned a different aspect ratio. Check the actual dimensions.', start: 'Generate', generating: 'Generating…', cancelGenerate: 'Cancel',
+    provider: 'Provider', model: 'Model', workflow: 'Workflow', workflowCount: '{count} workflows', noWorkflows: 'No workflows', noWorkflowHint: 'Import an API-format workflow JSON in Settings > Plugins > Arya Image Gen to start generating.', workflowEditUnsupported: 'This workflow has no image input; pick an edit workflow for image-to-image.', noEditWorkflow: 'No edit-capable workflow is imported. Add an image input placeholder to a workflow, or import an edit workflow, in Settings > Plugins > Arya Image Gen.', progressQueued: 'Queued', progressRunning: 'Generating', progressElapsed: '{seconds}s', progressQueueAhead: '{count} ahead in queue', progressPreviewAlt: 'Live ComfyUI preview', autoWorkflowHint: 'Chosen automatically for the mode; open to override for this session.', ratio: 'Aspect ratio', quality: 'Quality', subscriptionParameterHint: 'The selected aspect ratio is automatically added to the generation prompt. ChatGPT still determines the final dimensions and quality; check the generated result.', subscriptionRatioMismatch: 'ChatGPT subscription returned a different aspect ratio. Check the actual dimensions.', start: 'Generate', generating: 'Generating…', cancelGenerate: 'Cancel',
     count: 'Number of images', countUnit: '{n}', partialSuccess: 'Generated {success} images, {failed} failed', generatingCount: 'Generating ({count} images)…',
     batchResult: 'Generated {count} images',
     singleModel: 'Single workflow', compareModels: 'Compare workflows', compareHint: 'Send the same prompt to multiple workflows', compareSelect: 'Choose workflows', compareSelected: '{count} workflows selected',
@@ -183,6 +184,9 @@ export const StudioView: FC<{
   const [comparisonEnabled, setComparisonEnabled] = useState(false)
   const [comparisonProviderKeys, setComparisonProviderKeys] = useState<string[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
+  const [jobProgress, setJobProgress] = useState<ComfyUIJobSnapshot | null>(null)
+  const jobIdRef = useRef<string | null>(null)
+  const jobPollRef = useRef<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -770,7 +774,39 @@ export const StudioView: FC<{
     }
   }
 
+  const stopJobPolling = useCallback((): void => {
+    if (jobPollRef.current !== null) {
+      window.clearInterval(jobPollRef.current)
+      jobPollRef.current = null
+    }
+  }, [])
+
+  /** Poll the snapshot route while a single generation runs. */
+  const followJob = useCallback((jobId: string): void => {
+    stopJobPolling()
+    const tick = async (): Promise<void> => {
+      try {
+        const response = await fetch(`${COMFYUI_PROGRESS_ROUTE}/${jobId}?format=json`, { credentials: 'same-origin' })
+        if (!response.ok) return
+        const payload = await response.json() as { job?: ComfyUIJobSnapshot }
+        if (payload.job === undefined) return
+        setJobProgress(payload.job)
+        const { phase } = payload.job
+        if (phase === 'done' || phase === 'error' || phase === 'cancelled') stopJobPolling()
+      } catch { /* progress is advisory; the generation request owns failures */ }
+    }
+    void tick()
+    jobPollRef.current = window.setInterval(() => { void tick() }, 800)
+  }, [stopJobPolling])
+
   const cancelGeneration = () => {
+    const jobId = jobIdRef.current
+    if (jobId !== null) {
+      void fetch(`${COMFYUI_PROGRESS_ROUTE}/${jobId}/cancel`, { method: 'POST', credentials: 'same-origin' }).catch(() => {})
+    }
+    stopJobPolling()
+    setJobProgress(null)
+    jobIdRef.current = null
     if (requestRef.current) {
       requestRef.current.abort()
       requestRef.current = null
@@ -822,6 +858,12 @@ export const StudioView: FC<{
     setError(null)
     const controller = new AbortController()
     requestRef.current = controller
+    const jobId = comparisonEnabled ? undefined : crypto.randomUUID()
+    jobIdRef.current = jobId ?? null
+    if (jobId !== undefined) {
+      setJobProgress(null)
+      followJob(jobId)
+    }
     try {
       const referencesPayload: StudioReference[] | undefined = mode === 'edit' && references.length > 0
         ? await Promise.all(references.map(async (ref) => {
@@ -888,6 +930,10 @@ export const StudioView: FC<{
           generationQuality: value.target.generationQuality,
           watermark: studioWatermarkCapability(value.target.profile, mode).status === 'supported' ? watermark : undefined,
           output: value.payload.output,
+          ...(value.payload.seed !== undefined ? { seed: value.payload.seed } : {}),
+          ...(value.payload.queueMs !== undefined ? { queueMs: value.payload.queueMs, execMs: value.payload.execMs, totalMs: value.payload.totalMs } : {}),
+          ...(value.payload.queueAhead !== undefined ? { queueAhead: value.payload.queueAhead } : {}),
+          ...(value.payload.comfyVersion !== undefined ? { comfyVersion: value.payload.comfyVersion } : {}),
           ...(value.payload.savedTo ? { savedTo: value.payload.savedTo } : {}),
           ...(workspace?.path ? { workspacePath: workspace.path } : {}),
           ...(workspace?.workspaceId ? { workspaceId: workspace.workspaceId } : {}),
@@ -920,6 +966,7 @@ export const StudioView: FC<{
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           mode, provider, model: requestModel, prompt: prompt.trim(), ratio, quality: selectedQuality,
+          ...(jobId === undefined ? {} : { jobId }),
           ...(activeProfile.channel === undefined ? {} : { channel: activeProfile.channel }),
           ...(selectedResolution === undefined ? {} : { resolution: selectedResolution }),
           ...((provider as string) === 'openai-compat' ? { generationQuality: selectedGenerationQuality } : {}),
@@ -998,6 +1045,9 @@ export const StudioView: FC<{
       }
       setError(messageOf(submitError))
     } finally {
+      stopJobPolling()
+      setJobProgress(null)
+      jobIdRef.current = null
       if (requestRef.current === controller) {
         requestRef.current = null
         setIsGenerating(false)
@@ -1719,6 +1769,21 @@ export const StudioView: FC<{
             </>}
             {config !== null && allWorkflows.length === 0 ? <div className="dsh-ig-inline-note">{t('noProvider')}</div> : null}
             {config !== null && allWorkflows.length > 0 && mode === 'edit' && editableWorkflowCount === 0 ? <div className="dsh-ig-inline-note">{t('noEditWorkflow')}</div> : null}
+            {isGenerating && jobProgress !== null ? (
+              <div className="dsh-ig-progress" role="status" aria-live="polite">
+                <div className="dsh-ig-progress-head">
+                  <span>{jobProgress.phase === 'queued' ? t('progressQueued') : jobProgress.phase === 'running' ? t('progressRunning') : jobProgress.phase}</span>
+                  <span>{t('progressElapsed', { seconds: (jobProgress.elapsedMs / 1000).toFixed(1) })}</span>
+                </div>
+                <div className="dsh-ig-progress-track">
+                  <div className="dsh-ig-progress-fill" style={{ width: `${jobProgress.max > 0 ? Math.min(100, Math.round((jobProgress.value / jobProgress.max) * 100)) : jobProgress.phase === 'running' ? 100 : 0}%` }} />
+                </div>
+                <span className="dsh-ig-progress-node">{jobProgress.nodeLabel ?? (jobProgress.queueAhead !== undefined && jobProgress.phase === 'queued' ? t('progressQueueAhead', { count: String(jobProgress.queueAhead) }) : '')}</span>
+                {jobProgress.previewVersion > 0 ? (
+                  <img className="dsh-ig-progress-preview" alt={t('progressPreviewAlt')} src={`${COMFYUI_PROGRESS_ROUTE}/${jobProgress.jobId}/preview?v=${jobProgress.previewVersion}`} />
+                ) : null}
+              </div>
+            ) : null}
             {error !== null && <div className="dsh-ig-form-error">{error}</div>}
             {isGenerating ? (
               <button type="button" className="dsh-ig-generate-button is-cancel" onClick={cancelGeneration}>

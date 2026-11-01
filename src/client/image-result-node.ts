@@ -13,6 +13,12 @@ export interface ImageResultPresentation {
   readonly savedTo?: string
   /** Workflow seed reported by the ComfyUI provider, when available. */
   readonly seed?: number
+  /** ComfyUI timing split, when the provider reported it. */
+  readonly queueMs?: number
+  readonly execMs?: number
+  readonly totalMs?: number
+  readonly queueAhead?: number
+  readonly comfyVersion?: string
   /** Attachment ids of the edit sources when this image came from edit_image; used to rebuild canvas edit chains. */
   readonly sourceAttachmentIds?: readonly string[]
 }

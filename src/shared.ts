@@ -15,6 +15,8 @@ export const INSPIRATION_ROUTE = '/plugins/dsh-image-gen/inspiration'
 export const SAVE_WORKSPACE_ROUTE = '/plugins/dsh-image-gen/save-workspace'
 /** Same-origin route that starts, stops, restarts, and probes the local ComfyUI server. */
 export const COMFYUI_SERVER_ROUTE = '/plugins/dsh-image-gen/comfyui-server'
+/** Prefix for live job snapshots, previews, and cancellation. */
+export const COMFYUI_PROGRESS_ROUTE = '/plugins/dsh-image-gen/progress'
 /** Non-secret settings capability probe, available even when the host cannot serve a form. */
 export const SETTINGS_HEALTH_ROUTE = '/plugins/dsh-image-gen/settings-health'
 
@@ -284,6 +286,8 @@ export interface StudioGenerateRequest {
   /** Workflow name to run; must be one of the profile's modelOptions. */
   model: string
   prompt: string
+  /** Client-generated job id used to follow live progress for this request. */
+  jobId?: string | undefined
   reference?: StudioReference
   references?: StudioReference[]
   count?: number | undefined
@@ -303,6 +307,14 @@ export interface StudioGeneratedItem {
   output: string
   savedTo?: string | undefined
   seed?: number
+  /** ComfyUI workflow that produced this image. */
+  workflow?: string
+  /** Timing split and provenance from the ComfyUI job. */
+  queueMs?: number
+  execMs?: number
+  totalMs?: number
+  queueAhead?: number
+  comfyVersion?: string
 }
 
 /** One completed workbench request. */

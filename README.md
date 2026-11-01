@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/readme/hero-arya.webp" alt="Arya Image Gen feature overview" width="100%" />
+<img src="docs/assets/readme/hero-arya-wide.webp" alt="Arya Image Gen feature overview" width="100%" />
 
 # Arya Image Gen
 
@@ -126,6 +126,18 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 <img src="docs/assets/readme/studio-arya.webp" alt="ComfyUI Workbench in DSH: workflow picker, infinite canvas, and generation panel" width="100%" />
 
 <img src="docs/assets/readme/inspiration-arya.webp" alt="Image Studio in DSH: Gallery, Studio, Inspiration, and Favorites tabs, with the English prompt library open" width="100%" />
+
+## Presets
+
+This bundle also registers an agent preset, **Arya Image**, for sessions whose only job is making images. Pick it in the preset picker when you start a session.
+
+- Keeps the core working set: `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), the job tools, `todo_write`, `ask_user_question`, and `present`.
+- Keeps this plugin's six tools: `generate_image`, `generate_images`, `edit_image`, `find_inspiration`, `canvas_state`, `view_canvas`.
+- Masks every other tool the mounted bundles register — the Engineering bundle, MCP servers, computer use, web, skills, subagents, and goals — so their schemas are not sent on every request.
+
+Set `agentPreset: false` in the plugin configuration to stop the preset from being registered.
+
+Two things worth knowing. A preset is context economy, not a sandbox: masked tools still exist on the host, they are just not offered to that session. And editing a preset in the Web editor replaces its whole row list, so a later plugin update will not merge into an edited copy.
 
 ## Requirements
 

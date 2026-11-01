@@ -12,6 +12,15 @@ A fresh configuration starts with these four workflows already in place, named
 are copied to `<ComfyUI>/user/default/workflows/Arya Image (Plugin API)/` so you
 can open them in the ComfyUI editor too.
 
+An install that saved an empty list before this release also shows the shipped
+set: an unconfigured plugin falls back to the pack rather than reporting "no
+workflow imported".
+
+`list_workflows` lets the model see the same picture: each workflow's role, its
+adjustable parameters, the size it bakes, and which one each role picks by
+default. With that it names a workflow deliberately (a cutout, a background
+removal, an adjustable size) instead of inheriting whatever was active.
+
 Removing one in the settings card removes it from *your* configuration only —
 uninstall and reinstall brings the shipped set back. Use **Check against
 ComfyUI** to confirm the server knows every node class and model file they

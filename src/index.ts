@@ -15,7 +15,7 @@ import { editComfyUIImage, generateComfyUIImage, type ComfyUIJobTimings } from '
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
-import { CANVAS_STATE_ROUTE, CHECK_WORKFLOWS_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, RENDER_HEALTH_ROUTE, RENDER_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, resolveComfyUIWorkflows, type ComfyUIGenerationParams, type ComfyUIServerStatus } from './shared.js'
+import { CANVAS_STATE_ROUTE, CHECK_WORKFLOWS_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, RENDER_HEALTH_ROUTE, RENDER_ROUTE, STUDIO_ROUTE, describeWorkflowCatalog, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, resolveComfyUIWorkflows, type ComfyUIGenerationParams, type ComfyUIServerStatus } from './shared.js'
 import { createInspirationRoute } from './inspiration-route.js'
 import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspiration.js'
 import { describeStudio, generateFromStudio } from './studio.js'
@@ -512,6 +512,41 @@ export function apply(ctx: Context, config: Config = {}): void {
       return saveGenerated(ctx, generated, 'comfyui', workflow.name, workflow.name, current(), exec, knownWorkspaceRoots)
     },
     presentResult: (_args, result) => imagePresentation(result),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: IMAGE_TOOL_NAMES.listWorkflows,
+    description: 'List the configured ComfyUI workflows: each one\'s role (text-to-image or image-to-image), which parameters a call may set (width, height, steps, cfg), the size it bakes when fixed, and which one each role picks by default. Call it when the user asks for a particular look, speed or task (a cutout, a background removal, a specific size) so the workflow argument names one deliberately instead of inheriting whatever was active.',
+    parameters: {},
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false, properties: {
+          workflows: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
+            name: { type: 'string', required: true },
+            role: { type: 'string', required: true },
+            adjustable: { type: 'object', required: true, additionalProperties: false, properties: {
+              width: { type: 'boolean', required: true }, height: { type: 'boolean', required: true },
+              steps: { type: 'boolean', required: true }, cfg: { type: 'boolean', required: true },
+            } },
+            bakedSize: { type: 'object', additionalProperties: false, properties: {
+              width: { type: 'integer', required: true }, height: { type: 'integer', required: true },
+            } },
+            active: { type: 'boolean', required: true },
+          } } },
+        },
+      },
+      render: (_args: unknown, value: { workflows: { name: string; role: string; adjustable: Record<string, boolean>; bakedSize?: { width: number; height: number }; active: boolean }[] }) => [{
+        type: 'text' as const,
+        text: value.workflows.map(entry => {
+          const params = Object.entries(entry.adjustable).filter(([, on]) => on).map(([key]) => key)
+          const size = params.includes('width') ? 'adjustable size' : entry.bakedSize === undefined ? 'size baked' : `${String(entry.bakedSize.width)}x${String(entry.bakedSize.height)}`
+          return `${entry.name} [${entry.role}] ${size}${params.length > 0 ? ` (${params.join(', ')})` : ''}${entry.active ? ' — default' : ''}`
+        }).join('\n'),
+      }],
+    },
+    async execute(): Promise<{ workflows: ReturnType<typeof describeWorkflowCatalog> }> {
+      return { workflows: describeWorkflowCatalog(current()) }
+    },
   }))
 
   ctx.tools.register(defineTool({

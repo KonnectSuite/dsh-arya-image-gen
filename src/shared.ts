@@ -1,5 +1,6 @@
 /** Values shared by the Host and browser Bundle faces. ComfyUI-only build. */
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { SHIPPED_WORKFLOWS } from './generated/default-workflows.js'
 
 /** Browser route used by the generated-image card. */
 export const IMAGE_ROUTE = '/plugins/dsh-image-gen/image'
@@ -119,6 +120,7 @@ export const IMAGE_TOOL_NAMES = {
   renderHtml: 'render_html',
   renderSvg: 'render_svg',
   listRenderTemplates: 'list_render_templates',
+  listWorkflows: 'list_workflows',
   canvasState: 'canvas_state',
   viewCanvas: 'view_canvas',
 } as const
@@ -657,6 +659,50 @@ export function activeWorkflowForRole(source: ComfyUIWorkflowSource, role: Comfy
   return role === 'text-to-image' ? entries[0] : undefined
 }
 
+/** One workflow as the agent sees it when choosing deliberately. */
+export interface WorkflowCatalogEntry {
+  name: string
+  role: ComfyUIWorkflowRole
+  /** Which parameters a call may set. */
+  adjustable: { width: boolean; height: boolean; steps: boolean; cfg: boolean }
+  /** Size the workflow bakes when it takes no size parameters. */
+  bakedSize?: { width: number; height: number }
+  /** True when this is the workflow a role would pick without naming one. */
+  active: boolean
+}
+
+/**
+ * Describe every configured workflow for the model, with which one each role
+ * would pick by default.
+ *
+ * This is what lets the agent choose a workflow on purpose instead of relying on
+ * whatever the last session left active.
+ *
+ * @param source - workflow settings.
+ * @returns one entry per workflow, in configured order.
+ */
+export function describeWorkflowCatalog(source: ComfyUIWorkflowSource): WorkflowCatalogEntry[] {
+  const entries = resolveComfyUIWorkflows(source)
+  const activeText = activeWorkflowForRole(source, 'text-to-image')?.name
+  const activeEdit = activeWorkflowForRole(source, 'image-to-image')?.name
+  return entries.map(entry => {
+    const role = resolveWorkflowRole(entry)
+    const capabilities = describeWorkflowJson(entry.json)
+    return {
+      name: entry.name,
+      role,
+      adjustable: {
+        width: capabilities.placeholders.width,
+        height: capabilities.placeholders.height,
+        steps: capabilities.placeholders.steps,
+        cfg: capabilities.placeholders.cfg,
+      },
+      ...(capabilities.bakedSize === undefined ? {} : { bakedSize: capabilities.bakedSize }),
+      active: role === 'image-to-image' ? entry.name === activeEdit : entry.name === activeText,
+    }
+  })
+}
+
 /** Raw ComfyUI workflow fields as persisted through DSH Settings. */
 export interface ComfyUIWorkflowSource {
   /** Named workflows managed by the Web settings page. */
@@ -691,9 +737,14 @@ export function resolveComfyUIWorkflows(source: ComfyUIWorkflowSource): ComfyUIW
   }
   if (named.length > 0) return named
   const legacyJson = typeof source.comfyuiWorkflowJson === 'string' ? source.comfyuiWorkflowJson : ''
-  if (legacyJson.trim().length === 0) return []
-  const legacyName = typeof source.comfyuiWorkflowName === 'string' ? source.comfyuiWorkflowName.trim() : ''
-  return [{ name: legacyName.length > 0 ? legacyName : DEFAULT_COMFYUI_WORKFLOW_LABEL, json: legacyJson }]
+  if (legacyJson.trim().length > 0) {
+    const legacyName = typeof source.comfyuiWorkflowName === 'string' ? source.comfyuiWorkflowName.trim() : ''
+    return [{ name: legacyName.length > 0 ? legacyName : DEFAULT_COMFYUI_WORKFLOW_LABEL, json: legacyJson }]
+  }
+  // Nothing configured: fall back to the shipped pack. An install that saved an
+  // empty list before this release would otherwise show "No workflow imported"
+  // forever, and a fresh one should never start unusable.
+  return SHIPPED_WORKFLOWS.map(entry => ({ name: entry.name, json: entry.json }))
 }
 
 /** The workflow ComfyUI calls use by default: the configured active name, else the first entry. */

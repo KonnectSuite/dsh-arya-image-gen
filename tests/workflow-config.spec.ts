@@ -59,8 +59,8 @@ describe('selectComfyUIWorkflow', () => {
     expect(() => selectComfyUIWorkflow(active, 'missing')).toThrow(/paint, edit/)
   })
 
-  it('rejects generation when no workflow is imported', () => {
-    expect(() => selectComfyUIWorkflow(resolveProvider({}))).toThrow(/import one/)
+  it('falls back to the shipped pack when nothing is configured', () => {
+    expect(selectComfyUIWorkflow(resolveProvider({})).name).toMatch(/Qwen Image 2\.1/)
   })
 
   it('accepts a .json suffix and different casing', () => {

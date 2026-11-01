@@ -1,6 +1,6 @@
 {
   "name": "dsh-arya-image-gen",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "ComfyUI-native image generation for DeepSeek Harness: chat tools, creative canvas, Studio workbench, workflow comparison, and built-in server control.",
   "type": "module",
   "author": "AryaCode",

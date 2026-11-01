@@ -45,8 +45,10 @@ describe('describeStudio', () => {
     expect(retouch?.supportsEditing).toBe(true)
   })
 
-  it('reports no configured workflows as an empty list', () => {
-    expect(describeStudio({}).providers).toEqual([])
+  it('reports the shipped pack when nothing is configured', () => {
+    const providers = describeStudio({}).providers
+    expect(providers.length).toBeGreaterThan(0)
+    expect(providers[0]?.model).toMatch(/Qwen Image 2\.1/)
   })
 })
 
@@ -68,9 +70,9 @@ describe('generateFromStudio', () => {
     expect(result.model).toBe('paint')
   })
 
-  it('rejects generation when no workflow is imported', async () => {
+  it('rejects a workflow name that is not in the shipped pack', async () => {
     await expect(generateFromStudio(ctx, {}, { mode: 'generate', provider: 'comfyui', model: 'paint', prompt: 'x' }, new AbortController().signal))
-      .rejects.toThrow(/No ComfyUI workflows are imported/)
+      .rejects.toThrow(/workflow list changed/i)
   })
 
   it('rejects an unknown workflow', async () => {

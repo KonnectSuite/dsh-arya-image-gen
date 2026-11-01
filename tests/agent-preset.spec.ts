@@ -69,6 +69,7 @@ describe('image tool names', () => {
       'render_html',
       'render_svg',
       'list_render_templates',
+      'list_workflows',
       'canvas_state',
       'view_canvas',
     ])

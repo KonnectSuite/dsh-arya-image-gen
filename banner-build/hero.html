@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Arya Image Gen - README banner</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;width:2400px;height:1250px}
+  body{
+    font-family:Sora,sans-serif;color:#0F141B;
+    background:
+      radial-gradient(900px 620px at 4% 92%,rgba(0,224,210,.20),transparent 62%),
+      radial-gradient(820px 560px at 52% -10%,rgba(43,108,255,.16),transparent 60%),
+      radial-gradient(760px 600px at 100% 6%,rgba(138,92,255,.16),transparent 60%),
+      linear-gradient(160deg,#FBFDFF,#F1F7FF 48%,#F7FCFF);
+  }
+  .stage{width:2400px;height:1250px;padding:56px 72px;display:flex;flex-direction:column;gap:20px}
+
+  header{text-align:center}
+  .brand{font-size:38px;font-weight:700;letter-spacing:-.8px}
+  .brand .a{color:#17233A}
+  .brand .c{background:linear-gradient(92deg,#2B6CFF,#00E0D2);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h1{margin:4px 0 0;font-size:100px;line-height:1.02;letter-spacing:-2.6px;font-weight:800;
+    background:linear-gradient(95deg,#1B49D6 0%,#2B6CFF 36%,#00E0D2 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{margin:10px 0 0;font-size:29px;font-weight:500;color:#21519B}
+  .chips{margin-top:14px;display:flex;justify-content:center;gap:10px}
+  .chip{font-family:"JetBrains Mono",monospace;font-size:18px;font-weight:600;color:#1E4E93;
+    padding:7px 15px;border-radius:999px;background:rgba(43,108,255,.08);border:1px solid rgba(43,108,255,.18)}
+  .chip.hot{color:#063F45;background:rgba(0,224,210,.16);border-color:rgba(0,224,210,.45)}
+
+  .body{display:grid;grid-template-columns:450px 1fr;gap:22px;height:545px}
+  .mascot{position:relative;display:flex;align-items:flex-end;justify-content:center}
+  .mascot img{width:100%;max-height:520px;object-fit:contain;filter:drop-shadow(0 24px 36px rgba(11,18,32,.26))}
+  .bubble{position:absolute;top:2px;left:6px;background:#fff;border:2px solid rgba(43,108,255,.2);
+    border-radius:14px;padding:9px 14px;font-size:18px;font-weight:600;color:#1B3C6E;box-shadow:0 12px 24px rgba(15,20,27,.1)}
+
+  .right{display:grid;grid-template-rows:320px 185px;gap:20px;min-height:0}
+
+  .sources{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .src{background:#fff;border:1px solid rgba(43,108,255,.16);border-radius:20px;padding:20px;align-self:start;
+    display:flex;flex-direction:column;box-shadow:0 14px 30px rgba(17,36,68,.08)}
+  .bar{height:8px;border-radius:5px;margin-bottom:14px}
+  .src h3{margin:0;font-size:29px;font-weight:700;letter-spacing:-.5px}
+  .src .kind{font-family:"JetBrains Mono",monospace;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:#6E7F96;margin-top:3px}
+  .src p{margin:9px 0 0;font-size:18px;line-height:1.35;color:#4A5A72}
+  .demo{margin-top:18px;height:78px;border-radius:12px;background:#F7FAFF;border:1px solid rgba(43,108,255,.12);
+    display:flex;align-items:center;justify-content:center;gap:8px}
+  .node{font-family:"JetBrains Mono",monospace;font-size:13px;padding:6px 10px;border-radius:8px;color:#fff}
+  .aa{font-size:40px;font-weight:800;background:linear-gradient(95deg,#2B6CFF,#00E0D2);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  .features{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .feat{background:rgba(255,255,255,.94);border:1px solid rgba(43,108,255,.14);border-radius:18px;padding:18px;display:flex;flex-direction:column;justify-content:center}
+  .ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    font-family:"JetBrains Mono",monospace;font-size:17px;font-weight:700;color:#fff;margin-bottom:12px}
+  .feat h4{margin:0;font-size:21px;font-weight:700}
+  .feat p{margin:6px 0 0;font-size:15.5px;line-height:1.35;color:#4A5A72}
+
+  .steps{display:flex;align-items:center;justify-content:center;gap:12px}
+  .step{background:rgba(255,255,255,.92);border:1px solid rgba(43,108,255,.16);border-radius:12px;
+    padding:9px 16px;font-family:"JetBrains Mono",monospace;font-size:16px;font-weight:600;color:#22467E}
+  .step.on{color:#063F45;background:rgba(0,224,210,.14);border-color:rgba(0,224,210,.45)}
+  .arrow{color:#A9BCD9;font-size:20px}
+  footer{display:flex;flex-direction:column;gap:10px}
+  .powered{display:flex;align-items:center;gap:10px;align-self:flex-start;background:rgba(255,255,255,.9);
+    border:1px solid rgba(43,108,255,.14);border-radius:13px;padding:9px 15px}
+  .powered b{font-size:18px;color:#22395C}
+  .prov{font-family:"JetBrains Mono",monospace;font-size:14px;font-weight:600;color:#0F2D4A;
+    padding:6px 11px;border-radius:8px;background:rgba(43,108,255,.08);border:1px solid rgba(43,108,255,.2)}
+  .prov i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#00E0D2;margin-right:6px}
+  .prov.p i{background:#8A5CFF}
+  .band{border-radius:18px;background:linear-gradient(96deg,#1B49D6,#2B6CFF 46%,#00C9BE);padding:18px 26px;
+    display:flex;align-items:center;gap:22px;box-shadow:0 16px 36px rgba(27,73,214,.26)}
+  .band h2{margin:0;font-size:32px;font-weight:800;color:#fff;letter-spacing:-.6px}
+  .band p{margin:4px 0 0;font-size:17px;color:#DCE9FF}
+  .facts{margin-left:auto;display:flex;gap:10px}
+  .fact{background:#fff;border-radius:11px;padding:9px 13px;font-family:"JetBrains Mono",monospace}
+  .fact b{display:block;font-size:14px;color:#0F2D5A}
+  .fact span{display:block;font-size:11.5px;color:#486590}
+</style>
+</head>
+<body>
+<div class="stage">
+  <header>
+    <div class="brand"><span class="a">Arya</span><span class="c">Code</span></div>
+    <h1>Arya Image Gen</h1>
+    <div class="sub">ComfyUI, HTML and SVG image creation for DeepSeek Harness</div>
+    <div class="chips">
+      <span class="chip">Chat</span><span class="chip">Canvas</span><span class="chip">Studio</span>
+      <span class="chip">Render</span><span class="chip">Gallery</span>
+      <span class="chip hot">ComfyUI / HTML / SVG</span>
+    </div>
+  </header>
+
+  <div class="steps">
+    <span class="step">describe or author</span><span class="arrow">&#8594;</span>
+    <span class="step on">ComfyUI / HTML / SVG</span><span class="arrow">&#8594;</span>
+    <span class="step">PNG</span><span class="arrow">&#8594;</span>
+    <span class="step">chat / canvas / gallery</span>
+  </div>
+
+  <div class="body">
+    <div class="mascot">
+      <img src="{{AVATAR}}" alt="Arya">
+    </div>
+    <div class="right">
+      <div class="sources">
+        <div class="src">
+          <div class="bar" style="background:linear-gradient(90deg,#2B6CFF,#4E86FF)"></div>
+          <h3>ComfyUI</h3><div class="kind">Diffusion</div>
+          <p>Prompt to picture with the workflows you already run.</p>
+          <div class="demo"><span class="node" style="background:#2B6CFF">Prompt</span><span class="node" style="background:#00B8B0">Sampler</span><span class="node" style="background:#8A5CFF">VAE</span></div>
+        </div>
+        <div class="src">
+          <div class="bar" style="background:linear-gradient(90deg,#00B8B0,#00E0D2)"></div>
+          <h3>HTML to PNG</h3><div class="kind">Layout</div>
+          <p>Banners, cards and tables with real, exact text.</p>
+          <div class="demo"><span class="aa">Aa</span><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#5C77A0">1200x630</span></div>
+        </div>
+        <div class="src">
+          <div class="bar" style="background:linear-gradient(90deg,#6B48E8,#8A5CFF)"></div>
+          <h3>SVG to PNG</h3><div class="kind">Vector</div>
+          <p>Icons, logos and diagrams at any scale.</p>
+          <div class="demo"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#8A5CFF" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg></div>
+        </div>
+      </div>
+      <div class="features">
+        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#2B6CFF,#4E86FF)">G</div><h4>Generate &amp; edit</h4><p>Nine tools, one chat.</p></div>
+        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#00B8B0,#00E0D2)">H</div><h4>Render in chat</h4><p>render_html and render_svg.</p></div>
+        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#6B48E8,#8A5CFF)">S</div><h4>Studio render</h4><p>Template picker and preview.</p></div>
+        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#3B82F6,#2B6CFF)">C</div><h4>Server control</h4><p>Start and stop ComfyUI.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="powered">
+      <b>Powered by</b>
+      <span class="prov"><i></i>ComfyUI Local</span>
+      <span class="prov p"><i></i>ComfyUI Remote</span>
+      <span class="prov"><i></i>Chromium</span>
+    </div>
+    <div class="band">
+      <div><h2>Your GPU. Your markup.</h2><p>No cloud, no API keys, no design tool. Rendered by the browser you already have.</p></div>
+      <div class="facts">
+        <div class="fact"><b>Apache-2.0</b><span>open source</span></div>
+        <div class="fact"><b>9 tools</b><span>comfyui + render</span></div>
+        <div class="fact"><b>Local-first</b><span>your machine</span></div>
+      </div>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

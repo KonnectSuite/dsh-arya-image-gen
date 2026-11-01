@@ -25,6 +25,16 @@ Every file is validated against this plugin's own parser before release: it must
 contain `{{prompt}}`, declare at most one `{{image}}`, and keep each numeric
 placeholder as a whole field value.
 
+`tests/workflow-pack.spec.ts` also resolves each workflow the way a call would
+and, when a ComfyUI is reachable at `COMFY_URL` (default
+`http://127.0.0.1:8188`), asserts that every node class it uses exists in the
+live `object_info`. The live half skips on a machine without ComfyUI, so
+`pnpm test` stays green either way.
+
+Note for validation tooling: ComfyUI's own `validate_workflow` checks types, so a
+**templated** file fails it (`expected INT, got str '{{width}}'`) — validate the
+*resolved* workflow instead, which is what the test above does.
+
 ## Roles
 
 Every workflow is **Text to image** or **Image to image**.

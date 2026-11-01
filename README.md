@@ -70,7 +70,9 @@ Workflows are grouped by role: **Text to image** and **Image to image**, detecte
 
 Export from ComfyUI with **Save (API Format)**. UI-format workflows are not supported.
 
-Placeholders, roles, size presets and the one-workflow-per-size conversion are documented in [docs/comfyui-workflows.md](docs/comfyui-workflows.md).
+Four ready-made API workflows ship with the plugin — Qwen Image 2.1 create (with adjustable size), cutout, edit and background removal — in [`docs/workflows/`](docs/workflows/) or as [`arya-qwen-image-pack.zip`](docs/workflows/arya-qwen-image-pack.zip). Import them as-is.
+
+Placeholders, roles, size presets, the ready-made pack and the one-workflow-per-size conversion are documented in [docs/comfyui-workflows.md](docs/comfyui-workflows.md).
 
 ## Server Control
 

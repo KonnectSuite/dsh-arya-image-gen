@@ -17,6 +17,9 @@ const LEGACY_IMAGE_PLACEHOLDER = '%image%'
 /** LoadImage-style input key that receives the uploaded source image name. */
 const IMAGE_INPUT_KEY = 'image'
 
+/** Canvas edge used when a workflow declares width/height but a call omits them. */
+export const DEFAULT_CANVAS_SIDE = 1024
+
 /** The numeric placeholders one workflow may declare, with their accepted range. */
 const NUMERIC_PLACEHOLDERS = {
   width: { token: COMFYUI_WIDTH_PLACEHOLDER, min: 64, max: 8192, integer: true, label: 'width' },
@@ -168,6 +171,14 @@ function numericParameters(workflow: JsonRecord, options: PrepareWorkflowOptions
       continue
     }
     if (supplied === undefined) {
+      // Size is the one parameter a call may leave out: a templated workflow
+      // still has to run from a plain prompt, so it falls back to the canvas
+      // the Qwen Turbo graphs ship with. Sampling values stay mandatory,
+      // because guessing steps or cfg silently changes the picture.
+      if (key === 'width' || key === 'height') {
+        out[key] = DEFAULT_CANVAS_SIDE
+        continue
+      }
       throw new Error(`This workflow declares ${spec.token}; pass ${spec.label} so it can be filled in.`)
     }
     if (!Number.isFinite(supplied)) throw new Error(`${spec.label} must be a number`)

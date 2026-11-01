@@ -59,9 +59,19 @@ describe('numeric placeholders', () => {
       .toThrow(/bakes width/)
   })
 
-  it('refuses to leave a declared placeholder unfilled', () => {
-    expect(() => prepareComfyUIWorkflow(T2I, { prompt: 'p', seed: 1 }))
-      .toThrow(/declares \{\{width\}\}/)
+  const SIZE_ONLY = JSON.stringify({
+    3: { inputs: { text: '{{prompt}}' } },
+    5: { inputs: { width: '{{width}}', height: '{{height}}', batch_size: 1 } },
+  })
+
+  it('defaults size when a templated workflow runs from a plain prompt', () => {
+    const prepared = prepareComfyUIWorkflow(SIZE_ONLY, { prompt: 'p', seed: 1 }) as Record<string, { inputs: Record<string, unknown> }>
+    expect(prepared['5'].inputs).toMatchObject({ width: 1024, height: 1024 })
+  })
+
+  it('still refuses to leave sampling placeholders unfilled', () => {
+    expect(() => prepareComfyUIWorkflow(T2I, { prompt: 'p', seed: 1, width: 512, height: 512 }))
+      .toThrow(/declares \{\{steps\}\}/)
   })
 
   it('enforces the bounds', () => {

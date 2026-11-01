@@ -4,6 +4,27 @@ The Workflows card groups imports by what they do, and a workflow can expose
 the settings a call is allowed to change. Both exist for one reason: you should
 not need a separate JSON per size.
 
+## Ready-made pack
+
+Four API-format workflows ship in [`workflows/`](workflows/) and as
+[`arya-qwen-image-pack.zip`](workflows/arya-qwen-image-pack.zip). They import
+as-is in **Settings → Plugins → Arya Image Gen → Workflows**.
+
+| file | role | adjustable | output |
+|---|---|---|---|
+| `qwen-image-create.json` | Text to image | `{{width}}` `{{height}}` | standard image |
+| `qwen-image-cutout.json` | Text to image | baked 1024² | RGBA cutout |
+| `qwen-image-edit.json` | Image to image | baked | edited image |
+| `qwen-image-remove-bg.json` | Image to image | baked | background removed |
+
+`qwen-image-create.json` is the whole size family in one file: the latent size is
+`{{width}}`/`{{height}}` instead of three hard-coded pairs, and a call that omits
+the size gets 1024×1024, so plain `generate_image` keeps working.
+
+Every file is validated against this plugin's own parser before release: it must
+contain `{{prompt}}`, declare at most one `{{image}}`, and keep each numeric
+placeholder as a whole field value.
+
 ## Roles
 
 Every workflow is **Text to image** or **Image to image**.

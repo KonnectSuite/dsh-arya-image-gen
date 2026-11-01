@@ -117,6 +117,8 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 ## Features
 
 - **Chat generation**: `generate_image`, `generate_images`, and `edit_image` tools with automatic workspace saving.
+- **HTML to PNG**: `render_html` renders pixel-exact banners, cards, tables and infographics with the installed browser; six brand templates included.
+- **SVG to PNG**: `render_svg` rasterizes icons, logos, diagrams and charts at any scale.
 - **AI creative canvas**: a tldraw infinite canvas where sketches, text, and pasted images become model-readable context; selections can be edited directly.
 - **Studio workbench**: prompt, workflow picker, reference uploads, batch counts, and a recent-generation rail.
 - **Workflow comparison**: run one prompt across two or more imported workflows.
@@ -132,12 +134,33 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 This bundle also registers an agent preset, **Arya Image**, for sessions whose only job is making images. Pick it in the preset picker when you start a session.
 
 - Keeps the core working set: `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), the job tools, `todo_write`, `ask_user_question`, and `present`.
-- Keeps this plugin's six tools: `generate_image`, `generate_images`, `edit_image`, `find_inspiration`, `canvas_state`, `view_canvas`.
+- Keeps the nine image tools: `generate_image`, `generate_images`, `edit_image`, `find_inspiration`, `render_html`, `render_svg`, `list_render_templates`, `canvas_state`, `view_canvas`.
 - Masks every other tool the mounted bundles register — the Engineering bundle, MCP servers, computer use, web, skills, subagents, and goals — so their schemas are not sent on every request.
 
 Set `agentPreset: false` in the plugin configuration to stop the preset from being registered.
 
 Two things worth knowing. A preset is context economy, not a sandbox: masked tools still exist on the host, they are just not offered to that session. And editing a preset in the Web editor replaces its whole row list, so a later plugin update will not merge into an edited copy.
+
+## Rendering HTML and SVG
+
+Two more sources beside ComfyUI. Both rasterize with a Chromium-family browser you already have (Chrome, Edge or Chromium) and land in the same attachment, workspace and gallery path as a generated image.
+
+- `render_html` — templates or hand-written HTML. Six brand templates ship in the box: Open Graph card, square post, wide banner, feature grid, stat card, comparison table. Real text, real layout, no design tool.
+- `render_svg` — icons, logos, diagrams and charts, scalable to any output size.
+- `list_render_templates` — the template ids and slot names.
+
+**Studio → Render** gives the same thing a workbench: pick a template or paste markup, fill the slots, render, and keep the results in the rail.
+
+<p align="center">
+  <img src="docs/assets/render/og-card.png" alt="Open Graph card rendered from an HTML template" width="49%" />
+  <img src="docs/assets/render/banner.png" alt="Wide banner rendered from an HTML template" width="49%" />
+</p>
+
+Limits are deliberate: no JavaScript runs, no network is reachable, and the canvas is fixed (there is no auto-height). The renderer also strips scripts, event handlers and remote URLs before anything is loaded. Sora and JetBrains Mono ship with the plugin so rendered text matches the rest of AryaCode.
+
+Full guide, template gallery, examples and troubleshooting: [docs/rendering.md](docs/rendering.md).
+
+Set the browser path, default canvas size and background in **Settings → Plugins → Arya Image Gen → HTML and SVG rendering**; the card also reports whether a browser was found.
 
 ## Requirements
 

@@ -66,6 +66,9 @@ describe('image tool names', () => {
       'generate_images',
       'edit_image',
       'find_inspiration',
+      'render_html',
+      'render_svg',
+      'list_render_templates',
       'canvas_state',
       'view_canvas',
     ])

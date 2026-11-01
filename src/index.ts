@@ -15,7 +15,7 @@ import { editComfyUIImage, generateComfyUIImage, type ComfyUIJobTimings } from '
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
-import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, type ComfyUIServerStatus } from './shared.js'
+import { CANVAS_STATE_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, RENDER_HEALTH_ROUTE, RENDER_ROUTE, STUDIO_ROUTE, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, type ComfyUIServerStatus } from './shared.js'
 import { createInspirationRoute } from './inspiration-route.js'
 import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspiration.js'
 import { describeStudio, generateFromStudio } from './studio.js'
@@ -27,6 +27,11 @@ import { describeSettingsHealth, serveSettingsHealth } from './settings-health.j
 import { SETTINGS_HEALTH_ROUTE, type SettingsHealth } from './shared.js'
 import { deleteImageFromWorkspace, getDshWorkspaceRoots, getDshWorkspacesFull, saveImageToWorkspace } from './workspace-save.js'
 import { imageToolContext } from './image-tool-context.js'
+import { attachmentMeta, saveGenerated, type GeneratedValue } from './save-generated.js'
+import { registerRenderTools } from './render-tools.js'
+import { RENDER_LIMITS } from './render/render.js'
+import { describeRenderer, renderFromStudio, rendererHealth } from './render-service.js'
+import { serveRender } from './render-route.js'
 import { buildAgentPresetDefinition } from './agent-preset/definition.js'
 import { registerAgentPreset } from './agent-preset/register.js'
 
@@ -40,28 +45,6 @@ export { CANVAS_STATE_ROUTE } from './shared.js'
 
 export const name = 'dsh-image-gen'
 export const inject = ['tools', 'attachments']
-
-interface GeneratedValue {
-  attachment: ImageAttachmentRef
-  provider: ImageProvider
-  model: string
-  output: string
-  savedTo?: string
-  saveError?: string
-  /** Concrete workflow seed, exposed by the ComfyUI provider for provenance. */
-  seed?: number
-  /** Pixel dimensions and encoded size of the attached image. */
-  width?: number
-  height?: number
-  bytes?: number
-  /** Timing split reported by the ComfyUI job, in milliseconds. */
-  queueMs?: number
-  execMs?: number
-  totalMs?: number
-  /** Jobs queued ahead of this one at submission. */
-  queueAhead?: number
-  comfyVersion?: string
-}
 
 /** Capped prompt hits for the find_inspiration tool; `total` counts all matches. */
 interface InspirationSearchValue {
@@ -199,6 +182,27 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
     }), 'dsh-image-gen: comfyui progress route')
     webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact', path: RENDER_HEALTH_ROUTE,
+      handler: async (req, res) => {
+        try {
+          const health = await rendererHealth(current())
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify(health))
+        } catch (error) {
+          res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'render-health-failed' }))
+        }
+      },
+    }), 'dsh-image-gen: render health route')
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact', path: RENDER_ROUTE,
+      handler: (req, res) => serveRender(req, res, {
+        describe: () => describeRenderer(current()),
+        render: (input, signal) => renderFromStudio(ctx, current(), input, signal, knownWorkspaceRoots),
+        maxBodyBytes: Math.ceil(RENDER_LIMITS.maxMarkupBytes * 1.2),
+      }),
+    }), 'dsh-image-gen: render route')
+    webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact', path: CANVAS_STATE_ROUTE,
       handler: (req, res) => serveCanvasState(req, res, {
         mirror: canvasMirror,
@@ -230,6 +234,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       text: () => canvasMirror.digest(),
     }), 'dsh-image-gen: canvas context')
   })
+  // HTML and SVG rendering: same attachment path as a generated image, with a
+  // browser instead of a diffusion workflow behind it.
+  registerRenderTools(ctx, { config: current, knownRoots: knownWorkspaceRoots })
   registerCanvasTools(ctx, canvasMirror, {
     // Materialization hook: view_canvas persists a screenshot only when the
     // model actually views it. The content-addressed store dedupes repeat
@@ -530,68 +537,6 @@ function imageOutput(verb: 'Generated' | 'Edited') {
       prompt: (args as { prompt: string }).prompt,
     }),
   } as const
-}
-
-function attachmentMeta(ref: ImageAttachmentRef) {
-  return {
-    attachmentId: String(ref.attachmentId), mediaType: ref.mediaType, bytes: ref.bytes, width: ref.width, height: ref.height,
-    ...(ref.name === undefined ? {} : { name: ref.name }),
-    ...(ref.originalDimensions === undefined ? {} : { originalDimensions: { width: ref.originalDimensions.width, height: ref.originalDimensions.height } }),
-  }
-}
-
-/** Model- and user-visible provenance for one finished image. */
-function provenanceLine(prefix: string, attachment: ImageAttachmentRef, seed?: number, timings?: ComfyUIJobTimings, comfyVersion?: string): string {
-  const parts = [prefix, `${String(attachment.width)}x${String(attachment.height)}`]
-  if (seed !== undefined) parts.push(`seed ${String(seed)}`)
-  if (timings !== undefined) {
-    parts.push(`queued ${seconds(timings.queueMs)}`, `ran ${seconds(timings.execMs)}`, `total ${seconds(timings.totalMs)}`)
-  }
-  if (comfyVersion !== undefined) parts.push(`ComfyUI ${comfyVersion}`)
-  return parts.join(' · ')
-}
-
-function seconds(milliseconds: number): string {
-  return `${(milliseconds / 1000).toFixed(1)}s`
-}
-
-async function saveGenerated(
-  ctx: Context,
-  generated: { data: Uint8Array; mediaType: ImageAttachmentRef['mediaType']; seed?: number; timings?: ComfyUIJobTimings; comfyVersion?: string },
-  provider: ImageProvider,
-  model: string,
-  outputPrefix: string,
-  config: Config,
-  exec: { agent?: { session: { header: { cwd?: string } } }; signal: AbortSignal },
-  knownRoots?: Set<string>,
-): Promise<GeneratedValue> {
-  if (!ctx.attachments.imageLimits.mediaTypes.includes(generated.mediaType)) throw new Error(`This DSH deployment does not accept ${generated.mediaType} generated images`)
-  const attachment = await ctx.attachments.saveImage({ data: generated.data, mediaType: generated.mediaType, name: 'generated-image' })
-  const value: GeneratedValue = {
-    attachment, provider, model,
-    output: provenanceLine(outputPrefix, attachment, generated.seed, generated.timings, generated.comfyVersion),
-    width: attachment.width, height: attachment.height, bytes: attachment.bytes,
-    ...(typeof generated.seed === 'number' ? { seed: generated.seed } : {}),
-    ...(generated.timings === undefined ? {} : {
-      queueMs: generated.timings.queueMs,
-      execMs: generated.timings.execMs,
-      totalMs: generated.timings.totalMs,
-      queueAhead: generated.timings.queueAhead,
-    }),
-    ...(generated.comfyVersion === undefined ? {} : { comfyVersion: generated.comfyVersion }),
-  }
-  if (config.saveToWorkspace === false) return value
-  const workspaceRoot = exec.agent?.session.header.cwd
-  if (workspaceRoot === undefined) return value
-  knownRoots?.add(workspaceRoot)
-  try {
-    value.savedTo = await saveImageToWorkspace({ workspaceRoot, folder: config.workspaceFolder, attachmentId: attachment.attachmentId, mediaType: generated.mediaType, data: generated.data, signal: exec.signal })
-  } catch (error) {
-    exec.signal.throwIfAborted()
-    ctx.logger.warn(`dsh-image-gen: failed to save image to workspace: ${error instanceof Error ? error.message : String(error)}`)
-    value.saveError = error instanceof Error ? error.message : String(error)
-  }
-  return value
 }
 
 function imagePresentation(result: ToolResult) {

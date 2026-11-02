@@ -28,8 +28,9 @@ function resolve(file: string): { json: string; prepared: Record<string, unknown
   const size = capabilities.placeholders.width || capabilities.placeholders.height
     ? { width: 1024, height: 1024 }
     : {}
+  const dynamic = json.includes('{{images}}')
   const prepared = role === 'image-to-image'
-    ? prepareComfyUIWorkflow(json, { prompt: 'pack probe', seed: 1, image: 'probe.png', ...size })
+    ? prepareComfyUIWorkflow(json, { prompt: 'pack probe', seed: 1, image: 'probe.png', ...(dynamic ? { images: ['probe.png', 'scene.png'] } : {}), ...size })
     : prepareComfyUIWorkflow(json, { prompt: 'pack probe', seed: 1, ...size })
   return { json, prepared, role }
 }
@@ -45,8 +46,9 @@ function classesOf(prepared: Record<string, unknown>): string[] {
 }
 
 describe('shipped workflow pack', () => {
-  it('ships the four documented workflows', () => {
+  it('ships the five documented workflows', () => {
     expect(files).toEqual([
+      'qwen-image-compose.json',
       'qwen-image-create.json',
       'qwen-image-cutout.json',
       'qwen-image-edit.json',
@@ -57,6 +59,7 @@ describe('shipped workflow pack', () => {
   it('assigns the documented roles', () => {
     const roles = Object.fromEntries(files.map(file => [file, resolveWorkflowRole({ name: file, json: readFileSync(path.join(dir, file), 'utf8') })]))
     expect(roles).toEqual({
+      'qwen-image-compose.json': 'image-to-image',
       'qwen-image-create.json': 'text-to-image',
       'qwen-image-cutout.json': 'text-to-image',
       'qwen-image-edit.json': 'image-to-image',

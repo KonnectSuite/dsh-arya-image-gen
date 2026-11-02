@@ -31,7 +31,24 @@ tradeoff ("fast draft"). Skip it for an ordinary prompt on the defaults.
 | a cutout / transparent subject | the cutout workflow by name |
 | background removal from their image | the remove-background workflow, with `edit_image` |
 | "edit / restyle / change this photo" | `edit_image`; the edit workflow is chosen for you |
+| "put this chair in my living room", "this product on that table" — a subject plus a scene | the compose workflow, with both references in order |
 | speed over detail | the fastest workflow, named explicitly |
+
+## Several references at once
+
+A workflow that declares `{{images}}` takes any number of references, in the
+order you pass them; a workflow with `{{image}}` takes exactly one and refuses
+extras with a message that names the fix. Hand the compose workflow its images
+in the order you describe them — subject first, scene second:
+
+```
+edit_image(workflow="Qwen Image 2.1 - compose (any number of references)",
+           source_paths=["…/references/chair.jpg", "…/references/living-room.jpg"],
+           prompt="Keep the chair's shape, fabric and colour from image 1 exactly; place it in the room of image 2 on the floor by the window, matching that room's light and shadow. Do not restyle the chair.")
+```
+
+Two or three references is the useful range; more inputs dilute the identity you
+asked to keep, and the encoder stops at 16 slots.
 
 ## Rules
 

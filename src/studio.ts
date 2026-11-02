@@ -129,7 +129,7 @@ async function runStudioGeneration(
         headers: active.headers,
         workflowJson: workflow.json,
         prompt: promptWithPreset(workflow, input.prompt),
-        sourceImage: { data: sourceImages[0]!.data, mediaType: sourceImages[0]!.mediaType },
+        sourceImages: sourceImages.map(image => ({ data: image.data, mediaType: image.mediaType })),
         ...(jobId === undefined ? {} : { clientId: jobId }),
         timeoutMs: active.timeoutMs,
         maxBytes: ctx.attachments.imageLimits.maxImageBytes,

@@ -438,14 +438,14 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.tools.register(defineTool({
     name: IMAGE_TOOL_NAMES.editImage,
-    description: 'Edit, combine, or restyle an existing image with the configured local ComfyUI workflow. Images attached inline to the latest human message are already readable DSH attachments even when no workspace file exists. In that case, call edit_image immediately with prompt only; NEVER call read_image, glob, or shell to locate them, and NEVER invent @ paths. All inline images will be used in upload order. For specific older conversation images use source_attachment_id or source_attachment_ids; both canonical sha256: IDs and full bare SHA-256 digests are accepted. For files the user explicitly names in the workspace use source_path or source_paths. For what the user selected or drew on the image-gen workbench canvas (for example a hand-drawn sketch) use source=canvas_selection; canvas_state can verify a selection exists first. Provide exactly one selector field. Without a selector, images from the latest human message take priority; only when that message has no images does editing fall back to the newest conversation image. ComfyUI edits run one source image per call against a workflow with an image input. When the user wants a person, character, or object from the reference images kept as the same identity, write short hard identity-preservation instructions (use the same subject from the references; do not redesign it or synthesize a similar-looking replacement; change only scene, clothing, pose, lighting, style, or composition) instead of long generic appearance descriptions, which make the model replace the subject with a synthesized lookalike.',
+    description: 'Edit, combine, or restyle an existing image with the configured local ComfyUI workflow. Images attached inline to the latest human message are already readable DSH attachments even when no workspace file exists. In that case, call edit_image immediately with prompt only; NEVER call read_image, glob, or shell to locate them, and NEVER invent @ paths. All inline images will be used in upload order. For specific older conversation images use source_attachment_id or source_attachment_ids; both canonical sha256: IDs and full bare SHA-256 digests are accepted. For files the user explicitly names in the workspace use source_path or source_paths. For what the user selected or drew on the image-gen workbench canvas (for example a hand-drawn sketch) use source=canvas_selection; canvas_state can verify a selection exists first. Provide exactly one selector field. Without a selector, images from the latest human message take priority; only when that message has no images does editing fall back to the newest conversation image. One call may carry several ordered references: a workflow that declares the {{images}} input uses every one of them in order (subject from image 1, room or scene from image 2, and so on), while a single-image workflow refuses extras and names the fix. When the user wants a person, character, or object from the reference images kept as the same identity, write short hard identity-preservation instructions (use the same subject from the references; do not redesign it or synthesize a similar-looking replacement; change only scene, clothing, pose, lighting, style, or composition) instead of long generic appearance descriptions, which make the model replace the subject with a synthesized lookalike.',
     parameters: {
       prompt: { type: 'string', required: true, description: 'Describe the changes to make while preserving everything else that should remain.' },
       source: { type: 'string', enum: ['canvas_selection'], description: 'Use the current selection on the image-gen workbench infinite canvas as the reference image(s): full-resolution originals when the selection is conversation-generated images, plus a screenshot of the whole selection when it also contains other content (hand-drawn strokes, pasted images). Choose this when the user refers to what they selected or drew on the canvas; combine with no other selector field.' },
       source_attachment_id: { type: 'string', description: 'Optional attachment id of a specific image already present in the current conversation.' },
-      source_attachment_ids: { type: 'array', items: { type: 'string' }, description: 'Optional ordered attachment ids of multiple images already present in the current conversation. Prompt references such as image 1 and image 2 follow this order. ComfyUI edits the first image.' },
+      source_attachment_ids: { type: 'array', items: { type: 'string' }, description: 'Optional ordered attachment ids of multiple images already present in the current conversation. Prompt references such as image 1 and image 2 follow this order, and a multi-reference workflow consumes them in that order.' },
       source_path: { type: 'string', description: 'Optional absolute or workspace-relative path of a specific image file inside the active session workspace. Prefer this when the user names a saved file.' },
-      source_paths: { type: 'array', items: { type: 'string' }, description: 'Optional ordered absolute paths of multiple image files inside the active session workspace. ComfyUI edits the first image.' },
+      source_paths: { type: 'array', items: { type: 'string' }, description: 'Optional ordered paths of multiple image files inside the active session workspace; a multi-reference workflow consumes them in this order.' },
       workflow: { type: 'string', description: 'Optional name of the ComfyUI edit workflow to run (one with an image input); omit to use the active image-to-image workflow.' },
       width: { type: 'integer', description: 'Optional output width in pixels, when the edit workflow declares {{width}}.' },
       height: { type: 'integer', description: 'Optional output height in pixels, when the edit workflow declares {{height}}.' },
@@ -484,11 +484,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           signal: exec.signal,
         })
 
-      if (sourceImages.length > 1) {
-        throw new Error(`ComfyUI edit_image supports exactly one source image per call; this call resolved ${String(sourceImages.length)} images. Call edit_image again with source_attachment_id set to the single attachment ID of the image to edit.`)
-      }
-      const sourceImage = sourceImages[0]
-      if (sourceImage === undefined) throw new Error('edit_image requires a reference image')
+      // Ordered references: a workflow that declares {{images}} takes all of
+      // them; one that declares a single {{image}} refuses extras inside
+      // prepareComfyUIWorkflow with a message that names the fix.
+      if (sourceImages.length === 0) throw new Error('edit_image requires a reference image')
       const workflow = selectWorkflowForRole(current(), 'image-to-image', args.workflow)
       const jobId = typeof exec.callId === 'string' && exec.callId.length > 0 ? progressJobIdForCall(exec.callId) : undefined
       if (jobId !== undefined) comfyProgress.ensure(jobId, { baseURL: active.baseURL, headers: active.headers, workflowJson: workflow.json })
@@ -499,7 +498,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           headers: active.headers,
           workflowJson: workflow.json,
           prompt: mergeComfyUIPrompt(workflow.presetPrompt, args.prompt),
-          sourceImage: { data: sourceImage.data, mediaType: sourceImage.mediaType },
+          sourceImages: sourceImages.map(image => ({ data: image.data, mediaType: image.mediaType })),
           timeoutMs: active.timeoutMs,
           maxBytes: ctx.attachments.imageLimits.maxImageBytes,
           signal: exec.signal,

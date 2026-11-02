@@ -4,6 +4,17 @@ import { describeWorkflowJson, MAX_COMFYUI_WORKFLOW_BYTES, type ComfyUIWorkflowC
 export const COMFYUI_PROMPT_PLACEHOLDER = '{{prompt}}'
 export const COMFYUI_SEED_PLACEHOLDER = '{{seed}}'
 export const COMFYUI_IMAGE_PLACEHOLDER = '{{image}}'
+/**
+ * Dynamic reference list: a link whose node id is this token expands into one
+ * LoadImage node per supplied reference, in order.
+ *
+ * Declared as `"images.image_1": ["{{images}}", 0]`, it lets one workflow take
+ * as many references as a call supplies (up to the encoder's slot count)
+ * instead of hard-coding a slot per photo.
+ */
+export const COMFYUI_IMAGES_PLACEHOLDER = '{{images}}'
+/** Slots this plugin will fill for one call; ComfyUI's Qwen encoder tops out here. */
+export const MAX_COMFYUI_REFERENCE_IMAGES = 16
 export const COMFYUI_WIDTH_PLACEHOLDER = '{{width}}'
 export const COMFYUI_HEIGHT_PLACEHOLDER = '{{height}}'
 export const COMFYUI_STEPS_PLACEHOLDER = '{{steps}}'
@@ -47,14 +58,18 @@ export interface PrepareWorkflowOptions extends ComfyUIGenerationParams {
   prompt: string
   seed?: number
   image?: string
+  /** Ordered reference image names for a workflow that declares `{{images}}`. */
+  images?: readonly string[]
 }
 
 /** Validate imported JSON without exposing workflow graph details to callers. */
 export function validateComfyUIWorkflowJson(workflowJson: string): void {
   const workflow = parseWorkflow(workflowJson)
-  const imageInputs = countImagePlaceholders(workflow)
-  if (imageInputs > 1) {
-    throw new Error(`ComfyUI workflow must contain at most one ${COMFYUI_IMAGE_PLACEHOLDER} image input; found ${String(imageInputs)}`)
+  if (!hasDynamicImagePlaceholder(workflowJson)) {
+    const imageInputs = countImagePlaceholders(workflow)
+    if (imageInputs > 1) {
+      throw new Error(`ComfyUI workflow must contain at most one ${COMFYUI_IMAGE_PLACEHOLDER} image input; found ${String(imageInputs)}. Use ${COMFYUI_IMAGES_PLACEHOLDER} to accept any number of references.`)
+    }
   }
   assertNumericPlaceholdersWhole(workflow)
 }
@@ -98,6 +113,7 @@ export function prepareComfyUIWorkflow(workflowJson: string, optionsOrPrompt: Pr
   const prompt = options.prompt
   const seed = options.seed ?? randomSeed()
   const image = options.image
+  const references = options.images ?? []
   const workflow = parseWorkflow(workflowJson)
   const numeric = numericParameters(workflow, options)
   let promptReplacements = 0
@@ -141,6 +157,28 @@ export function prepareComfyUIWorkflow(workflowJson: string, optionsOrPrompt: Pr
   if (promptReplacements === 0) {
     throw new Error(`ComfyUI workflow must contain ${COMFYUI_PROMPT_PLACEHOLDER} in a text input`)
   }
+
+  // A workflow that declares {{images}} takes as many references as the call
+  // supplies; the slices become one LoadImage node per image, in order.
+  if (hasDynamicImagePlaceholder(workflowJson)) {
+    const names = [...(references.length > 0 ? references : image === undefined ? [] : [image])]
+    if (names.length === 0) {
+      throw new Error(`This workflow takes reference images through ${COMFYUI_IMAGES_PLACEHOLDER}; call edit_image with at least one source image`)
+    }
+    if (names.length > MAX_COMFYUI_REFERENCE_IMAGES) {
+      throw new Error(`This workflow accepts at most ${String(MAX_COMFYUI_REFERENCE_IMAGES)} reference images; ${String(names.length)} were supplied`)
+    }
+    return expandReferenceSlices(prepared, names)
+  }
+  if (image === undefined && references.length === 0) {
+    if (imageInputs > 0) {
+      throw new Error(`ComfyUI workflow contains an ${COMFYUI_IMAGE_PLACEHOLDER} image input, which requires edit_image with a source image`)
+    }
+    return prepared
+  }
+  if (imageInputs > 0 && references.length > 1) {
+    throw new Error(`This workflow takes exactly one reference image (${COMFYUI_IMAGE_PLACEHOLDER}); ${String(references.length)} were supplied - use a workflow that declares ${COMFYUI_IMAGES_PLACEHOLDER} for multi-reference composition`)
+  }
   if (image === undefined) {
     if (imageInputs > 0) {
       throw new Error(`ComfyUI workflow contains an ${COMFYUI_IMAGE_PLACEHOLDER} image input, which requires edit_image with a source image`)
@@ -154,6 +192,74 @@ export function prepareComfyUIWorkflow(workflowJson: string, optionsOrPrompt: Pr
     throw new Error(`ComfyUI workflow must contain exactly one ${COMFYUI_IMAGE_PLACEHOLDER} image input; found ${String(imageInputs)}`)
   }
   return prepared
+}
+
+/** One node input that declares the dynamic reference list. */
+interface ReferenceSlice {
+  nodeId: string
+  key: string
+  /** Key prefix without its trailing index, e.g. `images.image_`. */
+  prefix: string
+}
+
+/** Find every `inputs` entry whose link node id is the dynamic token. */
+function findReferenceSlices(workflow: JsonRecord): ReferenceSlice[] {
+  const slices: ReferenceSlice[] = []
+  for (const [nodeId, value] of Object.entries(workflow)) {
+    const inputs = record(record(value)?.inputs)
+    if (inputs === undefined) continue
+    for (const [key, child] of Object.entries(inputs)) {
+      if (!Array.isArray(child) || child[0] !== COMFYUI_IMAGES_PLACEHOLDER) continue
+      const match = /^(.*?)(\d+)$/u.exec(key)
+      if (match === null) {
+        throw new Error(`${COMFYUI_IMAGES_PLACEHOLDER} must sit on a numbered input such as "images.image_1" (node ${nodeId}, input "${key}")`)
+      }
+      slices.push({ nodeId, key, prefix: match[1] ?? '' })
+    }
+  }
+  return slices
+}
+
+/** Highest numeric node id, so generated LoadImage ids cannot collide. */
+function highestNodeId(workflow: JsonRecord): number {
+  let highest = 0
+  for (const key of Object.keys(workflow)) {
+    if (!/^\d+$/u.test(key)) continue
+    highest = Math.max(highest, Number(key))
+  }
+  return highest
+}
+
+/**
+ * Replace each dynamic slice with one LoadImage node per reference.
+ *
+ * The encoder's slot order is the order the caller supplied the images in, so
+ * "image 1 is the chair, image 2 is the room" stays true.
+ *
+ * @param workflow - prepared workflow still carrying the dynamic link.
+ * @param names - uploaded ComfyUI image names, in caller order.
+ * @returns the expanded workflow.
+ */
+function expandReferenceSlices(workflow: JsonRecord, names: readonly string[]): JsonRecord {
+  const slices = findReferenceSlices(workflow)
+  if (slices.length === 0) {
+    throw new Error(`This workflow declares ${COMFYUI_IMAGES_PLACEHOLDER} but no input links it; put it on a numbered image input such as "images.image_1"`)
+  }
+  const expanded: JsonRecord = { ...workflow }
+  let nextId = highestNodeId(expanded) + 1
+  for (const slice of slices) {
+    const node = record(expanded[slice.nodeId]) ?? {}
+    const inputs: JsonRecord = { ...(record(node.inputs) ?? {}) }
+    delete inputs[slice.key]
+    names.forEach((name, index) => {
+      const id = String(nextId)
+      nextId += 1
+      expanded[id] = { class_type: 'LoadImage', inputs: { image: name } }
+      inputs[`${slice.prefix}${String(index + 1)}`] = [id, 0]
+    })
+    expanded[slice.nodeId] = { ...node, inputs }
+  }
+  return expanded
 }
 
 /**
@@ -285,7 +391,14 @@ function countImagePlaceholders(workflow: JsonRecord): number {
 
 /** True when the workflow JSON declares an image input, so it can run edits. */
 export function hasComfyUIImagePlaceholder(workflowJson: string): boolean {
-  return workflowJson.includes(COMFYUI_IMAGE_PLACEHOLDER) || workflowJson.includes(LEGACY_IMAGE_PLACEHOLDER)
+  return workflowJson.includes(COMFYUI_IMAGE_PLACEHOLDER)
+    || workflowJson.includes(LEGACY_IMAGE_PLACEHOLDER)
+    || hasDynamicImagePlaceholder(workflowJson)
+}
+
+/** True when the workflow takes a variable number of references. */
+export function hasDynamicImagePlaceholder(workflowJson: string): boolean {
+  return workflowJson.includes(COMFYUI_IMAGES_PLACEHOLDER)
 }
 
 function isImagePlaceholder(value: unknown): boolean {

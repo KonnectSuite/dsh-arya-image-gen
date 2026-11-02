@@ -17,6 +17,7 @@ const outFile = path.join(root, 'src', 'generated', 'default-workflows.ts')
 
 /** Pretty names users see in the workbench instead of the file name. */
 const LABELS = {
+  'qwen-image-compose.json': 'Qwen Image 2.1 - compose (any number of references)',
   'qwen-image-create.json': 'Qwen Image 2.1 - create (adjustable size)',
   'qwen-image-cutout.json': 'Qwen Image 2.1 - cutout (RGBA)',
   'qwen-image-edit.json': 'Qwen Image 2.1 - edit',

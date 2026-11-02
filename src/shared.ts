@@ -549,7 +549,7 @@ export const COMFYUI_SIZE_PRESETS: readonly { id: string; label: string; width: 
  */
 export function describeWorkflowJson(json: string): ComfyUIWorkflowCapabilities {
   const placeholders = { width: false, height: false, steps: false, cfg: false, resolution: json.includes('{{resolution}}') }
-  const role: ComfyUIWorkflowRole = json.includes('{{image}}') || json.includes('%image%') ? 'image-to-image' : 'text-to-image'
+  const role: ComfyUIWorkflowRole = json.includes('{{image}}') || json.includes('{{images}}') || json.includes('%image%') ? 'image-to-image' : 'text-to-image'
   let parsed: unknown
   try {
     parsed = JSON.parse(json)
@@ -601,7 +601,7 @@ export interface ComfyUIWorkflowEntry {
  * @returns the role it should appear under.
  */
 export function resolveWorkflowRole(entry: ComfyUIWorkflowEntry): ComfyUIWorkflowRole {
-  return entry.role ?? (entry.json.includes('{{image}}') || entry.json.includes('%image%') ? 'image-to-image' : 'text-to-image')
+  return entry.role ?? (entry.json.includes('{{image}}') || entry.json.includes('{{images}}') || entry.json.includes('%image%') ? 'image-to-image' : 'text-to-image')
 }
 
 /** Workflows belonging to one role, in import order. */

@@ -39,15 +39,23 @@ as-is in **Settings → Plugins → Arya Image Gen → Workflows**.
 | `qwen-image-create.json` | Text to image | `{{width}}` `{{height}}` | standard image |
 | `qwen-image-cutout.json` | Text to image | baked 1024² | RGBA cutout |
 | `qwen-image-edit.json` | Image to image | baked | edited image |
+| `qwen-image-compose.json` | Image to image | baked | any number of references blended |
 | `qwen-image-remove-bg.json` | Image to image | baked | background removed |
 
 `qwen-image-create.json` is the whole size family in one file: the latent size is
 `{{width}}`/`{{height}}` instead of three hard-coded pairs, and a call that omits
 the size gets 1024×1024, so plain `generate_image` keeps working.
 
+`qwen-image-compose.json` takes as many reference photos as a call supplies
+("this chair, in this room"): its encoder declares `{{images}}` instead of a
+single `{{image}}`, and the plugin expands that into one `LoadImage` node per
+image, wired to `images.image_1`, `images.image_2`, … in the order given, up to
+the encoder's 16 slots. `edit_image(source_paths=[...])` fills them in order, so
+"image 1 is the subject, image 2 is the scene" holds.
+
 Every file is validated against this plugin's own parser before release: it must
-contain `{{prompt}}`, declare at most one `{{image}}`, and keep each numeric
-placeholder as a whole field value.
+contain `{{prompt}}`, declare at most one `{{image}}` (or the dynamic
+`{{images}}`), and keep each numeric placeholder as a whole field value.
 
 `tests/workflow-pack.spec.ts` also resolves each workflow the way a call would
 and, when a ComfyUI is reachable at `COMFY_URL` (default

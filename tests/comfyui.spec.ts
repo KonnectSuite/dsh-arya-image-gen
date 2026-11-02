@@ -21,6 +21,11 @@ const EDIT_WORKFLOW = JSON.stringify({
   6: { class_type: 'CLIPTextEncode', inputs: { text: '{{prompt}}' } },
 })
 
+/** Encoder with the dynamic reference marker on its first image slot. */
+const DYNAMIC_WORKFLOW = JSON.stringify({
+  14: { class_type: 'TextEncodeQwenImage21', inputs: { prompt: '{{prompt}}', 'images.image_1': ['{{images}}', 0] } },
+})
+
 function options(overrides: Partial<Parameters<typeof generateComfyUIImage>[0]> = {}): Parameters<typeof generateComfyUIImage>[0] {
   return {
     baseURL: 'http://127.0.0.1:8188',
@@ -120,6 +125,50 @@ describe('ComfyUI workflow preparation', () => {
   it('fails a generation whose workflow still contains an image placeholder', () => {
     expect(() => prepareComfyUIWorkflow(EDIT_WORKFLOW, 'p', 1))
       .toThrow('requires edit_image')
+  })
+
+  it('expands the dynamic reference marker into one LoadImage node per image, in order', () => {
+    const prepared = prepareComfyUIWorkflow(
+      DYNAMIC_WORKFLOW,
+      { prompt: 'p', seed: 7, images: ['chair.png', 'room.png', 'lamp.png'] },
+    ) as Record<string, { class_type?: string; inputs?: Record<string, unknown> }>
+    // One slot per reference, wired in call order, each to its own LoadImage.
+    expect(prepared[14]!.inputs!['images.image_1']).toEqual(['15', 0])
+    expect(prepared[14]!.inputs!['images.image_2']).toEqual(['16', 0])
+    expect(prepared[14]!.inputs!['images.image_3']).toEqual(['17', 0])
+    expect(prepared['15']).toEqual({ class_type: 'LoadImage', inputs: { image: 'chair.png' } })
+    expect(prepared['17']).toEqual({ class_type: 'LoadImage', inputs: { image: 'lamp.png' } })
+  })
+
+  it('keeps the dynamic workflow usable with a single reference', () => {
+    const prepared = prepareComfyUIWorkflow(DYNAMIC_WORKFLOW, { prompt: 'p', seed: 7, images: ['chair.png'] }) as Record<string, { inputs?: Record<string, unknown> }>
+    expect(prepared[14]!.inputs!['images.image_1']).toEqual(['15', 0])
+    expect(prepared[14]!.inputs!['images.image_2']).toBeUndefined()
+  })
+
+  it('refuses a dynamic workflow with no reference at all', () => {
+    expect(() => prepareComfyUIWorkflow(DYNAMIC_WORKFLOW, { prompt: 'p', seed: 7 }))
+      .toThrow('at least one source image')
+  })
+
+  it('refuses more references than the encoder has slots', () => {
+    const images = Array.from({ length: 17 }, (_, index) => `ref-${String(index)}.png`)
+    expect(() => prepareComfyUIWorkflow(DYNAMIC_WORKFLOW, { prompt: 'p', seed: 7, images }))
+      .toThrow('at most 16 reference images')
+  })
+
+  it('tells a single-image workflow owner to use a compose workflow for extras', () => {
+    expect(() => prepareComfyUIWorkflow(EDIT_WORKFLOW, { prompt: 'p', seed: 7, images: ['a.png', 'b.png'] }))
+      .toThrow('use a workflow that declares {{images}}')
+  })
+
+  it('accepts a dynamic workflow at import but rejects a numbered-key mistake', () => {
+    expect(() => validateComfyUIWorkflowJson(DYNAMIC_WORKFLOW)).not.toThrow()
+    const unnumbered = JSON.stringify({
+      14: { class_type: 'TextEncodeQwenImage21', inputs: { prompt: '{{prompt}}', images: ['{{images}}', 0] } },
+    })
+    expect(() => prepareComfyUIWorkflow(unnumbered, { prompt: 'p', seed: 1, images: ['a.png'] }))
+      .toThrow('numbered input')
   })
 })
 

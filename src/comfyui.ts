@@ -1,6 +1,6 @@
 /** ComfyUI text-to-image and image-to-image adapters using an imported API-format workflow. */
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import { prepareComfyUIWorkflow, randomSeed } from './comfyui-workflow.js'
+import { MAX_COMFYUI_REFERENCE_IMAGES, prepareComfyUIWorkflow, randomSeed } from './comfyui-workflow.js'
 import type { ComfyUIGenerationParams } from './shared.js'
 
 /** Pick the generation parameters a workflow may declare, dropping absent ones. */
@@ -90,17 +90,32 @@ export async function generateComfyUIImage(input: ComfyUIJobInput & ComfyUIGener
   }
 }
 
-/** Upload one source image, run the workflow, and return its first final image. */
+/** Upload the source image(s), run the workflow, and return its first final image. */
 export async function editComfyUIImage(input: ComfyUIJobInput & ComfyUIGenerationParams & {
   workflowJson: string
   prompt: string
-  sourceImage: ComfyUISourceImage
+  /** Single reference; kept for callers that pass one image. */
+  sourceImage?: ComfyUISourceImage
+  /** Ordered references for a workflow that declares `{{images}}`. */
+  sourceImages?: readonly ComfyUISourceImage[]
   maxBytes: number
 }): Promise<GeneratedComfyUIImage> {
+  const sources = input.sourceImages ?? (input.sourceImage === undefined ? [] : [input.sourceImage])
+  if (sources.length === 0) throw new Error('editComfyUIImage needs at least one source image')
+  if (sources.length > MAX_COMFYUI_REFERENCE_IMAGES) {
+    throw new Error(`At most ${String(MAX_COMFYUI_REFERENCE_IMAGES)} reference images are supported; ${String(sources.length)} were supplied`)
+  }
   const seed = randomSeed()
   const job = await runJob(input, async (baseURL, signal) => {
-    const imageName = await uploadSourceImage(baseURL, input.sourceImage, signal)
-    const workflow = prepareComfyUIWorkflow(input.workflowJson, { prompt: input.prompt, seed, image: imageName, ...paramsOf(input) })
+    const imageNames: string[] = []
+    for (const source of sources) imageNames.push(await uploadSourceImage(baseURL, source, signal))
+    const workflow = prepareComfyUIWorkflow(input.workflowJson, {
+      prompt: input.prompt,
+      seed,
+      images: imageNames,
+      ...(imageNames[0] === undefined ? {} : { image: imageNames[0] }),
+      ...paramsOf(input),
+    })
     const submission = await submitWorkflow(baseURL, workflow, signal, input.headers, input.clientId)
     const wait = await waitForOutput(baseURL, submission.promptId, signal, input.headers)
     const image = await downloadOutput(baseURL, wait.output, input.maxBytes, signal, input.headers)

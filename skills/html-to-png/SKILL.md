@@ -9,6 +9,20 @@ description: Render HTML to a PNG image with the Arya Image Gen plugin (render_h
 
 Use `render_html` when the user wants **exact text and layout**: banners, Open Graph cards, slides, comparison tables, infographics, badges, README art. Use `generate_image` when the user wants a scene, character, illustration or photo.
 
+## When NOT to use it
+
+Never to look at a website, an app or a live page. `render_html` draws one
+isolated document you hand it — no project stylesheets, no scripts, no routes,
+no dev server, no network — so a PNG of a site's markup is not what the site
+looks like. To verify a website, run its dev server (or open the file) and view
+it in a browser; if the request is "does my page look right", that is a browser
+job, not a render.
+
+The tool says so itself when the markup reads like a page (script tags, a linked
+stylesheet, nav/header/main/footer, or relative asset paths). If you see that
+warning in the result, stop and switch to the browser route instead of iterating
+on the PNG.
+
 ## The loop
 
 1. `list_render_templates` once per session to see ids and slot names.

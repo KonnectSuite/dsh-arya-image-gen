@@ -20,6 +20,14 @@ in the same gallery, canvas and workspace folder.
 | Typical time | seconds to minutes | under a second | under a second |
 | Needs | a ComfyUI workflow | a browser | a browser |
 
+**Neither render tool can look at a website.** They draw one isolated document
+with no scripts, no network, no project stylesheets and no dev server, so a PNG
+of a page's markup is not what that page looks like — verifying a site or an app
+means running it and viewing it in a browser. The `render_html` description says
+so, and when the markup reads like a page (script tags, a linked stylesheet,
+nav/header/main/footer, or relative asset paths) the result carries a warning
+that names the browser route.
+
 <p align="center"><img src="../assets/render/comparison.png" alt="Comparison table" width="70%" /></p>
 
 ## Tools

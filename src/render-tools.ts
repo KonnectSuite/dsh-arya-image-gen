@@ -15,6 +15,7 @@ import { resolveRenderDefaults, type Config } from './config.js'
 import { attachmentMeta, saveGenerated, type GeneratedValue } from './save-generated.js'
 import { IMAGE_TOOL_NAMES, type ImageProvider } from './shared.js'
 import { renderToPng, RenderError, RENDER_LIMITS, type RenderKind } from './render/render.js'
+import { looksLikeWebPage, pageWarning } from './render/web-page-guard.js'
 import { fillTemplate, RENDER_TEMPLATES } from './render/templates.js'
 
 /** Host services and state the render tools borrow from the bundle. */
@@ -40,6 +41,8 @@ const IMAGE_OUTPUT_SCHEMA = {
 /** Extra field the render tools report: where the source file landed. */
 interface RenderValue extends GeneratedValue {
   sourceSavedTo?: string
+  /** Set when the markup read as a web page rather than a standalone card. */
+  pageWarning?: string
 }
 
 const TEMPLATE_HINT = RENDER_TEMPLATES.map(template => `${template.id} (${template.slots.join(', ')})`).join('; ')
@@ -53,7 +56,7 @@ const TEMPLATE_HINT = RENDER_TEMPLATES.map(template => `${template.id} (${templa
 export function registerRenderTools(ctx: Context, deps: RenderToolDeps): void {
   ctx.tools.register(defineTool({
     name: IMAGE_TOOL_NAMES.renderHtml,
-    description: `Render HTML to a PNG image with the installed browser. Use it for banners, cards, infographics, tables and any layout that must be pixel-exact - text stays real text, so it is sharper and more controllable than a generated image. No JavaScript runs and no network is reachable: the page must be complete static HTML with inline CSS, and any image must be a data: URL or a local file. Provide one of html, source_path, or template+data. Templates: ${TEMPLATE_HINT}. After rendering, look at the result, then edit and re-render if needed.`,
+    description: `Render HTML to a PNG image with the installed browser. Use it for banners, cards, infographics, tables and any layout that must be pixel-exact - text stays real text, so it is sharper and more controllable than a generated image. No JavaScript runs and no network is reachable: the page must be complete static HTML with inline CSS, and any image must be a data: URL or a local file. This is not a page-preview tool: it renders one isolated document you hand it, with none of a project's stylesheets, scripts, routes or dev server, so it cannot verify a website, an app or a live page - for that, start the project's dev server (or open the file) and view it in a browser. Provide one of html, source_path, or template+data. Templates: ${TEMPLATE_HINT}. After rendering, look at the result, then edit and re-render if needed.`,
     parameters: {
       html: { type: 'string', description: 'Complete HTML document or fragment. Inline CSS; scripts and remote URLs are stripped.' },
       source_path: { type: 'string', description: 'Render an HTML file from the session workspace instead of inline markup.' },
@@ -82,7 +85,7 @@ export function registerRenderTools(ctx: Context, deps: RenderToolDeps): void {
 
   ctx.tools.register(defineTool({
     name: IMAGE_TOOL_NAMES.renderSvg,
-    description: 'Render SVG markup to a PNG image with the installed browser. Use it for icons, logos, diagrams, charts and crisp vector art. Size defaults to the SVG viewBox or width/height attributes; pass width/height to override. Scripts, event handlers and remote references are stripped, and external fonts will not load - text uses the bundled Sora and JetBrains Mono families or a system fallback.',
+    description: 'Render SVG markup to a PNG image with the installed browser. Use it for icons, logos, diagrams, charts and crisp vector art. Size defaults to the SVG viewBox or width/height attributes; pass width/height to override. Scripts, event handlers and remote references are stripped, and external fonts will not load - text uses the bundled Sora and JetBrains Mono families or a system fallback. Like render_html this draws one isolated document: it does not verify a web page or an app\'s rendering, which needs the project running in a browser.',
     parameters: {
       svg: { type: 'string', description: 'SVG markup, e.g. <svg viewBox="0 0 24 24">...</svg>.' },
       source_path: { type: 'string', description: 'Render an SVG file from the session workspace instead of inline markup.' },
@@ -157,6 +160,10 @@ async function renderWith(
   const outputPrefix = `Rendered ${String(rendered.width)}x${String(rendered.height)} with ${browserLabel(rendered.browser.family)}`
   const value = await saveGenerated(ctx, { data: rendered.png, mediaType: 'image/png' }, input.kind, model, outputPrefix, config, exec, deps.knownRoots) as RenderValue
   value.output = `${value.output} · ${String(Math.round(rendered.durationMs))}ms`
+  if (input.kind === 'html') {
+    const reason = looksLikeWebPage(input.markup)
+    if (reason !== undefined) value.pageWarning = pageWarning(reason)
+  }
 
   if (config.renderSaveSource !== false && typeof value.savedTo === 'string') {
     try {
@@ -175,8 +182,9 @@ async function renderWith(
 function renderToolText(verb: string, value: RenderValue) {
   const saved = typeof value.savedTo === 'string' ? ` It was also saved to the workspace as ${value.savedTo}.` : ''
   const source = typeof value.sourceSavedTo === 'string' ? ` The source is next to it at ${value.sourceSavedTo}.` : ''
+  const warning = typeof value.pageWarning === 'string' ? ` ${value.pageWarning}` : ''
   return [
-    { type: 'text' as const, text: `${verb} one image with ${value.provider}/${value.model} (${value.output}). Attachment ID: ${String(value.attachment.attachmentId)}. It is already attached to the conversation.${saved}${source} Look at the image and fix anything that is wrong.` },
+    { type: 'text' as const, text: `${verb} one image with ${value.provider}/${value.model} (${value.output}). Attachment ID: ${String(value.attachment.attachmentId)}. It is already attached to the conversation.${saved}${source}${warning} Look at the image and fix anything that is wrong.` },
     { type: 'image' as const, attachment: value.attachment },
   ]
 }

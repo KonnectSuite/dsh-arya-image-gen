@@ -9,6 +9,8 @@ description: Author and rasterize SVG with the Arya Image Gen plugin (render_svg
 
 Use `render_svg` for **vector-native work**: icons, logo marks, simple diagrams, flow charts, geometric patterns, badges. Use `render_html` when the layout is text-heavy; use `generate_image` for photographic or illustrative scenes.
 
+Not for checking a website or an app: `render_svg` draws one isolated document, so it cannot tell you how a page renders. That needs the project running in a browser.
+
 The SVG is rendered by the browser, so text stays real text — no font-to-path conversion needed.
 
 ## Authoring rules

@@ -126,6 +126,7 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 ## Features
 
 - **Chat generation**: `generate_image`, `generate_images`, and `edit_image` tools with automatic workspace saving.
+- **Reference images from the web**: when a request names something real, the agent finds the actual photograph, imports it with `import_reference_image`, and edits from it instead of guessing at the details.
 - **HTML to PNG**: `render_html` renders pixel-exact banners, cards, tables and infographics with the installed browser; six brand templates included.
 - **SVG to PNG**: `render_svg` rasterizes icons, logos, diagrams and charts at any scale.
 - **AI creative canvas**: a tldraw infinite canvas where sketches, text, and pasted images become model-readable context; selections can be edited directly.
@@ -142,13 +143,31 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 
 This bundle also registers an agent preset, **Arya Image**, for sessions whose only job is making images. Pick it in the preset picker when you start a session.
 
-- Keeps the core working set: `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), the job tools, `todo_write`, `ask_user_question`, and `present`.
-- Keeps the nine image tools: `generate_image`, `generate_images`, `edit_image`, `find_inspiration`, `render_html`, `render_svg`, `list_render_templates`, `canvas_state`, `view_canvas`.
-- Masks every other tool the mounted bundles register — the Engineering bundle, MCP servers, computer use, web, skills, subagents, and goals — so their schemas are not sent on every request.
+- Keeps the core working set: `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), `web_search` and `web_fetch` when the host exposes them to the preset, the job tools, `todo_write`, `ask_user_question`, and `present`.
+- Keeps the eleven image tools: `generate_image`, `generate_images`, `edit_image`, `find_inspiration`, `import_reference_image`, `render_html`, `render_svg`, `list_render_templates`, `list_workflows`, `canvas_state`, `view_canvas`.
+- Masks every other tool the mounted bundles register — the Engineering bundle, MCP servers, computer use, skills, subagents, and goals — so their schemas are not sent on every request.
+
+Note on the current host: a preset registered at runtime resolves this bundle's own tools but not the host's base tools, so an **Arya Image** session today has the image tools only. Reference hunting (`web_search`) is available on **Standard mode** / **Arya Standard** sessions; see [docs/reference-images.md](docs/reference-images.md).
 
 Set `agentPreset: false` in the plugin configuration to stop the preset from being registered.
 
 Two things worth knowing. A preset is context economy, not a sandbox: masked tools still exist on the host, they are just not offered to that session. And editing a preset in the Web editor replaces its whole row list, so a later plugin update will not merge into an edited copy.
+
+## Reference images
+
+A prompt can describe a thing; it cannot reproduce one. When the request names something that already exists — a product, a landmark, a vehicle, a brand mark, a uniform, a public figure — the agent can fetch a photograph of the actual subject and edit from it, which is how the details it cannot know arrive intact.
+
+The loop is `web_search` → `web_fetch` (to find the image URL) → `import_reference_image` → `edit_image(source_path=…)`. `import_reference_image` is the only new part: it downloads one public image into the session workspace, refuses anything that is not really a PNG, JPEG or WebP, refuses private and loopback addresses, and caps the download at 16 MB.
+
+```
+import_reference_image(url="https://example.org/press/eiffel-tower.jpg", name="eiffel-tower")
+→ { path: "…/references/eiffel-tower.png", mediaType: "image/png", width: 2400, height: 1600, … }
+
+edit_image(source_path="…/references/eiffel-tower.png",
+           prompt="Keep the tower's proportions, tier spacing and arch shape; dusk, warm interior lights, no people.")
+```
+
+Full workflow, source quality rules, limits and the honesty rules: [docs/reference-images.md](docs/reference-images.md). The same guidance ships as the `arya-image-references` skill, and a condensed version sits in the **Arya Image** preset's persona so it works without the skill tool.
 
 ## Rendering HTML and SVG
 

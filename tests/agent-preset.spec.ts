@@ -7,10 +7,11 @@ import {
   ARYA_IMAGE_TOOLSET_ROW_ID,
   agentPresetAllowList,
   buildAgentPresetDefinition,
+  presetToolNames,
 } from '../src/agent-preset/definition.js'
 import { apply as applyToolset } from '../src/agent-preset/toolset.js'
 import { mountAgentPreset } from '../src/agent-preset/register.js'
-import { coreToolNames, IMAGE_TOOL_NAME_LIST } from '../src/shared.js'
+import { IMAGE_TOOL_NAME_LIST } from '../src/shared.js'
 
 describe('arya-image preset definition', () => {
   it('registers under a stable id, name and picker order', () => {
@@ -22,7 +23,7 @@ describe('arya-image preset definition', () => {
     expect(definition.description.length).toBeGreaterThan(0)
   })
 
-  it('mounts exactly the persona, the two preset-only core tools and the mask row', () => {
+  it('mounts the persona, the two preset-only tools and the mask row', () => {
     const definition = buildAgentPresetDefinition({ platform: 'win32' })
     expect(definition.plugins.map(row => row.id)).toEqual([
       'persona',
@@ -30,8 +31,7 @@ describe('arya-image preset definition', () => {
       'present',
       ARYA_IMAGE_TOOLSET_ROW_ID,
     ])
-    const toolset = definition.plugins.at(-1)
-    expect(toolset?.name).toBe(ARYA_IMAGE_TOOLSET_MODULE)
+    expect(definition.plugins.at(-1)?.name).toBe(ARYA_IMAGE_TOOLSET_MODULE)
   })
 
   it('carries an image-focused persona without replacing the runtime context', () => {
@@ -43,19 +43,21 @@ describe('arya-image preset definition', () => {
     expect(config.includeRuntimeContext).toBe(true)
   })
 
-  it('hands the mask the image tools plus the platform core set', () => {
-    const toolset = buildAgentPresetDefinition({ platform: 'win32' }).plugins.at(-1)
-    const allow = (toolset?.config as { allow: string[] }).allow
+  it('tries to keep the image tools, the working-directory tool and the tools a full preset would provide', () => {
+    const allow = agentPresetAllowList('win32')
     expect(allow.slice(0, IMAGE_TOOL_NAME_LIST.length)).toEqual([...IMAGE_TOOL_NAME_LIST])
+    expect(allow).toContain('working_directory')
+    expect(allow).toContain('read')
     expect(allow).toContain('pwsh')
+    expect(allow).toContain('web_search')
+    expect(allow).toContain('web_fetch')
+    expect(allow).toContain('ask_user_question')
     expect(allow).not.toContain('bash')
-    expect(allow).not.toContain('web_search')
     expect(allow).not.toContain('subagent')
-  })
-
-  it('switches the shell name with the platform', () => {
-    expect(agentPresetAllowList('linux')).toContain('bash')
-    expect(agentPresetAllowList('linux')).not.toContain('pwsh')
+    // Whatever the scope cannot restrict is dropped by the mask row itself.
+    expect(presetToolNames('win32')).toContain('web_search')
+    expect(presetToolNames('linux')).toContain('bash')
+    expect(presetToolNames('linux')).not.toContain('pwsh')
   })
 })
 
@@ -66,6 +68,7 @@ describe('image tool names', () => {
       'generate_images',
       'edit_image',
       'find_inspiration',
+      'import_reference_image',
       'render_html',
       'render_svg',
       'list_render_templates',
@@ -74,30 +77,28 @@ describe('image tool names', () => {
       'view_canvas',
     ])
   })
-
-  it('keep every core name spellable', () => {
-    expect(coreToolNames('win32')).toEqual([
-      'read', 'write', 'edit', 'glob', 'grep', 'pwsh',
-      'job_list', 'job_output', 'job_kill', 'todo_write',
-    ])
-  })
 })
 
-/** Minimal Context stand-in for the tool-mask row. */
-function toolsetHarness(options: { present?: string[]; restrictThrows?: boolean } = {}) {
-  const present = new Set(options.present ?? [])
-  const restrict = vi.fn((_filter: { allow: readonly string[] }) => {
-    if (options.restrictThrows === true) throw new Error('no agent scope')
+/**
+ * Minimal Context stand-in for the tool-mask row.
+ *
+ * `known` is what the registry will accept; any other name in the filter makes
+ * `restrict()` throw the way the real one does, listing the offenders.
+ */
+function toolsetHarness(options: { known?: string[]; throwWithoutNames?: string } = {}) {
+  const known = new Set(options.known ?? [])
+  const restrict = vi.fn((filter: { allow: readonly string[] }) => {
+    if (options.throwWithoutNames !== undefined) throw new Error(options.throwWithoutNames)
+    const unknown = filter.allow.filter(name => !known.has(name))
+    if (unknown.length > 0) {
+      throw new Error(`tools.restrict() names unknown global tool${unknown.length > 1 ? 's' : ''} ${unknown.map(name => `"${name}"`).join(', ')}; known global tools: ${[...known].sort().join(', ') || '(none)'}`)
+    }
     return () => {}
   })
   const effect = vi.fn((callback: () => () => void) => { callback() })
   const info = vi.fn()
   const warn = vi.fn()
-  const ctx = {
-    logger: { info, warn },
-    tools: { get: (name: string) => (present.has(name) ? { name } : undefined), restrict },
-    effect,
-  }
+  const ctx = { logger: { info, warn }, tools: { restrict }, effect }
   return { ctx, restrict, effect, info, warn }
 }
 
@@ -108,35 +109,46 @@ describe('arya-image tool mask row', () => {
     expect((applyToolset as unknown as { inject: string[] }).inject).toEqual(['tools'])
   })
 
-  it('restricts to the allow list, keeping only tools the host actually has', () => {
-    const h = toolsetHarness({ present: ['generate_image', 'read', 'pwsh'] })
+  it('applies the whole allow list when the registry knows every name', () => {
+    const h = toolsetHarness({ known: ['generate_image', 'read', 'pwsh', 'web_search'] })
     applyToolset(h.ctx as never, { allow: ['generate_image', 'read', 'pwsh', 'web_search'] })
     expect(h.restrict).toHaveBeenCalledTimes(1)
-    expect(h.restrict.mock.calls[0][0]).toEqual({ allow: ['generate_image', 'read', 'pwsh'] })
+    expect(h.restrict.mock.calls[0][0]).toEqual({ allow: ['generate_image', 'read', 'pwsh', 'web_search'] })
+    expect(h.info).not.toHaveBeenCalled()
+  })
+
+  it('drops exactly the names the registry calls unknown and retries', () => {
+    // The real case: a host without tool-web refuses the filter rather than
+    // quietly ignoring `web_search`.
+    const h = toolsetHarness({ known: ['generate_image', 'read', 'pwsh'] })
+    applyToolset(h.ctx as never, { allow: ['generate_image', 'read', 'pwsh', 'web_search', 'web_fetch'] })
+    expect(h.restrict).toHaveBeenCalledTimes(2)
+    expect(h.restrict.mock.calls[1][0]).toEqual({ allow: ['generate_image', 'read', 'pwsh'] })
     expect(h.info).toHaveBeenCalledWith(expect.stringContaining('web_search'))
+    expect(h.info).toHaveBeenCalledWith(expect.stringContaining('web_fetch'))
   })
 
   it('does nothing when no allow list is configured', () => {
-    const h = toolsetHarness({ present: ['read'] })
+    const h = toolsetHarness({ known: ['read'] })
     applyToolset(h.ctx as never, {})
     expect(h.restrict).not.toHaveBeenCalled()
   })
 
-  it('leaves the tool set untouched when none of the names exist', () => {
-    const h = toolsetHarness({ present: [] })
+  it('leaves the tool set untouched when the registry knows none of the names', () => {
+    const h = toolsetHarness({ known: [] })
     applyToolset(h.ctx as never, { allow: ['generate_image'] })
-    expect(h.restrict).not.toHaveBeenCalled()
+    expect(h.restrict).toHaveBeenCalledTimes(1)
     expect(h.warn).toHaveBeenCalledTimes(1)
   })
 
-  it('fails open when the registry refuses the restriction', () => {
-    const h = toolsetHarness({ present: ['read'], restrictThrows: true })
+  it('fails open when the registry refuses the restriction without naming tools', () => {
+    const h = toolsetHarness({ throwWithoutNames: 'tools.restrict() requires a scoped context' })
     expect(() => applyToolset(h.ctx as never, { allow: ['read'] })).not.toThrow()
-    expect(h.warn).toHaveBeenCalledWith(expect.stringContaining('no agent scope'))
+    expect(h.warn).toHaveBeenCalledWith(expect.stringContaining('scoped context'))
   })
 
   it('deduplicates repeated names', () => {
-    const h = toolsetHarness({ present: ['read'] })
+    const h = toolsetHarness({ known: ['read'] })
     applyToolset(h.ctx as never, { allow: ['read', 'read', 'read'] })
     expect(h.restrict.mock.calls[0][0]).toEqual({ allow: ['read'] })
   })

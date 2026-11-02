@@ -1,6 +1,6 @@
 /** Persist one generated image as a file under the session workspace. */
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises'
+import { link, lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { StudioWorkspaceInfo } from './shared.js'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -142,6 +142,60 @@ export async function saveImageToWorkspace(options: {
     throw error
   }
   return target
+}
+
+/**
+ * Persist one downloaded reference image under `<folder>/references`.
+ *
+ * Same containment rules as `saveImageToWorkspace`: the directory may nest but
+ * must resolve inside the workspace, checked lexically and again on disk. The
+ * file name is caller-chosen (a reference is not content-addressed like a
+ * generated image), with a numeric suffix when that name is already taken, so
+ * two references to different pictures never overwrite each other.
+ *
+ * @param options - workspace root, folder, bytes, media type and file name.
+ * @returns the absolute path of the written file.
+ */
+export async function saveReferenceImageToWorkspace(options: {
+  workspaceRoot: string
+  folder?: string | undefined
+  data: Uint8Array
+  mediaType: ImageAttachmentRef['mediaType']
+  name: string
+  signal?: AbortSignal | undefined
+}): Promise<string> {
+  const base = (options.folder ?? '').trim()
+  const referenceFolder = base === '' ? 'references' : `${base}/references`
+  const dir = workspaceImageDir(options.workspaceRoot, referenceFolder)
+  options.signal?.throwIfAborted()
+  const realRoot = await realpath(resolve(options.workspaceRoot))
+  assertInsideWorkspace(realRoot, await nearestExistingRealPath(dir), referenceFolder)
+  await mkdir(dir, { recursive: true })
+  assertInsideWorkspace(realRoot, await realpath(dir), referenceFolder)
+
+  const extension = EXTENSION[options.mediaType]
+  const stem = options.name.trim() === '' ? 'reference' : options.name.trim()
+  const staging = join(dir, `.${stem}.${process.pid}-${randomUUID()}.tmp`)
+  await writeFile(staging, options.data, { flag: 'wx', signal: options.signal })
+  try {
+    // `rename` would replace an existing reference; `link` refuses, so the
+    // numeric suffix below is what makes two different pictures coexist.
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const suffix = attempt === 0 ? '' : `-${String(attempt + 1)}`
+      const target = join(dir, `${stem}${suffix}.${extension}`)
+      try {
+        await link(staging, target)
+        options.signal?.throwIfAborted()
+        return target
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === 'EEXIST') continue
+        throw error
+      }
+    }
+    throw new Error(`reference image name '${stem}' is already taken for too many versions`)
+  } finally {
+    await unlink(staging).catch(() => {})
+  }
 }
 
 /** Regex pattern strictly matching generated image file names (e.g. image-01234567.png). */

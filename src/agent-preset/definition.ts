@@ -18,7 +18,7 @@
  *
  * @module dsh-arya-image-gen/agent-preset/definition
  */
-import { coreToolNames, IMAGE_TOOL_NAME_LIST } from '../shared.js'
+import { IMAGE_TOOL_NAME_LIST } from '../shared.js'
 import { ARYA_IMAGE_PERSONA } from './persona.js'
 
 /** The preset id sessions record in their header. */
@@ -57,17 +57,42 @@ export interface AgentPresetDefinition {
 }
 
 /**
- * Global tool names the preset keeps visible.
+ * Tool names the mask tries to keep besides the image tools.
  *
- * Image tools first so a truncated log still names them, then the core set.
- * The tool-mask row filters this against the live registry before restricting,
- * because `restrict()` refuses names the host does not have.
+ * A preset registered at runtime mounts its rows on the agent plane; the host's
+ * own tools are supplied by the composition, and `restrict()` reports them as
+ * unknown for this scope, so the mask row drops every name listed here. Keeping
+ * the list is therefore honest bookkeeping rather than a capability: it names
+ * what this preset would keep on a host that exposes them (a composition-row
+ * preset does - see docs/reference-images.md).
+ *
+ * @param platform - `process.platform` value of the host.
+ * @returns the model-facing tool names a full preset row list would provide.
+ */
+export function presetToolNames(platform: string): string[] {
+  return [
+    'read', 'write', 'edit', 'glob', 'grep',
+    platform === 'win32' ? 'pwsh' : 'bash',
+    'job_list', 'job_output', 'job_kill',
+    'todo_write',
+    'web_search', 'web_fetch',
+    'ask_user_question',
+    'present',
+  ]
+}
+
+/**
+ * Names the tool mask keeps visible.
+ *
+ * Image tools first so a truncated log still names them, then the working
+ * directory tool the host registers globally, then whatever of the preset's own
+ * tool list this host actually restricts.
  *
  * @param platform - `process.platform` value of the host.
  * @returns the allow list handed to the tool-mask row.
  */
 export function agentPresetAllowList(platform: string): string[] {
-  return [...IMAGE_TOOL_NAME_LIST, ...coreToolNames(platform)]
+  return [...IMAGE_TOOL_NAME_LIST, 'working_directory', ...presetToolNames(platform)]
 }
 
 /**

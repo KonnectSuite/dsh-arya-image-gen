@@ -34,6 +34,7 @@ import { describeRenderer, renderFromStudio, rendererHealth } from './render-ser
 import { serveRender } from './render-route.js'
 import { checkWorkflowsAgainstInstall } from './validate-workflows.js'
 import { mountAgentPreset } from './agent-preset/register.js'
+import { importReferenceImage, type ImportedReference } from './reference-import.js'
 
 export { Config } from './config.js'
 export { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta } from './image-route.js'
@@ -547,6 +548,46 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
     async execute(): Promise<{ workflows: ReturnType<typeof describeWorkflowCatalog> }> {
       return { workflows: describeWorkflowCatalog(current()) }
+    },
+  }))
+
+  // Search finds a URL, this turns it into a file edit_image can consume.
+  ctx.tools.register(defineTool({
+    name: IMAGE_TOOL_NAMES.importReference,
+    description: 'Download one reference image from a public http(s) URL into the session workspace so edit_image can use it as a source. Use it after web_search/web_fetch when the request names something real or specific - a product, a landmark, a vehicle, a uniform, a brand logo, a public figure - where a photo of the actual subject beats any description. It checks the URL returns a real PNG, JPEG or WebP (result pages and HTML error bodies are refused with the declared content type), refuses private or loopback addresses, and caps the download. It generates nothing: the reply is the workspace path to pass as edit_image source_path. Prefer official or press pages, import at most three references, and tell the user where each came from.',
+    parameters: {
+      url: { type: 'string', required: true, description: 'Direct image URL (http or https), normally one web_fetch exposed from a result page.' },
+      name: { type: 'string', description: 'Optional file stem for the saved reference, for example "eiffel-tower"; the extension always comes from the real file type.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false, properties: {
+          path: { type: 'string', required: true },
+          mediaType: { type: 'string', required: true },
+          bytes: { type: 'integer', required: true },
+          width: { type: 'integer' },
+          height: { type: 'integer' },
+          sourceUrl: { type: 'string', required: true },
+          digest: { type: 'string', required: true },
+        },
+      },
+      render: (_args: unknown, value: ImportedReference) => [{
+        type: 'text' as const,
+        text: `Imported ${value.path} (${value.mediaType}, ${String(value.bytes)} bytes${value.width === undefined || value.height === undefined ? '' : `, ${String(value.width)}x${String(value.height)}`}) from ${value.sourceUrl}. Pass it to edit_image as source_path.`,
+      }],
+    },
+    async execute(args, exec): Promise<ImportedReference> {
+      const workspaceRoot = exec.agent?.session.header.cwd
+      if (workspaceRoot === undefined) {
+        throw new Error('import_reference_image needs a session workspace folder to save the reference into')
+      }
+      return importReferenceImage({
+        url: args.url,
+        name: args.name,
+        workspaceRoot,
+        folder: current().workspaceFolder,
+        signal: exec.signal,
+      })
     },
   }))
 

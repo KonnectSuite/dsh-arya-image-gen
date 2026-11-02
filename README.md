@@ -143,11 +143,8 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 
 This bundle also registers an agent preset, **Arya Image**, for sessions whose only job is making images. Pick it in the preset picker when you start a session.
 
-- Keeps the core working set: `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), `web_search` and `web_fetch` when the host exposes them to the preset, the job tools, `todo_write`, `ask_user_question`, and `present`.
-- Keeps the eleven image tools: `generate_image`, `generate_images`, `edit_image`, `find_inspiration`, `import_reference_image`, `render_html`, `render_svg`, `list_render_templates`, `list_workflows`, `canvas_state`, `view_canvas`.
-- Masks every other tool the mounted bundles register — the Engineering bundle, MCP servers, computer use, skills, subagents, and goals — so their schemas are not sent on every request.
-
-Note on the current host: a preset registered at runtime resolves this bundle's own tools but not the host's base tools, so an **Arya Image** session today has the image tools only. Reference hunting (`web_search`) is available on **Standard mode** / **Arya Standard** sessions; see [docs/reference-images.md](docs/reference-images.md).
+- Keeps the working set an image session needs: the eleven image tools, `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), `read_image`, the job tools, `web_search` and `web_fetch`, `ask_user_question`, and `present`.
+- Declares those as its own rows, the way the shipped presets do, so the session has exactly this set and nothing from the Engineering bundle, MCP servers, computer use, skills, subagents or goals.
 
 Set `agentPreset: false` in the plugin configuration to stop the preset from being registered.
 

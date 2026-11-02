@@ -1,24 +1,26 @@
 /**
  * The Arya Image agent preset as data.
  *
- * Why this exists: a DSH agent inherits every tool the mounted bundles
- * register, and each schema is paid for on every request. An image session
- * needs six image tools and a small core, not an engineering bundle, an MCP
- * fleet and a computer-use driver. This preset keeps the small set visible and
- * masks the rest.
+ * Why this exists: a DSH agent inherits whatever its preset mounts, and each
+ * tool schema is paid for on every request. An image session needs the image
+ * tools, a filesystem, a shell, jobs, the web for reference photos, a question
+ * and a deliverable - and nothing from an engineering bundle, an MCP fleet or a
+ * computer-use driver.
  *
- * How the mask works (see `@deepseek-ai/dsh-tools`): `ctx.tools.restrict({
- * allow })` hides inherited *global* tools for one agent scope, while tools
- * registered by the preset's own rows stay visible. The image tools come from
- * this Bundle's host row, so they are global and are whitelisted explicitly.
+ * The row list is the mechanism, the same way the AryaCode presets work: a
+ * preset declares the plugins it runs, and those rows are the session's tools.
+ * Masking inherited tools is NOT a substitute - a mask can only name what the
+ * host registers globally, so a session built on inherited tools ends up with
+ * whatever happened to be global and none of the base tools.
  *
- * `tool-ask-user` and `tool-present` are mounted here because the base bundle
- * does not mount them; everything else the preset keeps already exists in the
- * host tree, so repeating those rows would only shadow them.
+ * The image tools are not rows: they come from this bundle's host row and are
+ * already global, so a preset that mounts rows and masks nothing keeps them.
+ *
+ * Shell rows use `disabled` rather than a platform switch, matching the shipped
+ * presets, so a definition is one shape on every platform.
  *
  * @module dsh-arya-image-gen/agent-preset/definition
  */
-import { IMAGE_TOOL_NAME_LIST } from '../shared.js'
 import { ARYA_IMAGE_PERSONA } from './persona.js'
 
 /** The preset id sessions record in their header. */
@@ -28,16 +30,10 @@ export const ARYA_IMAGE_PRESET_ID = 'arya-image'
 export const ARYA_IMAGE_PRESET_NAME = 'Arya Image'
 
 /** One line under the name in the picker. */
-export const ARYA_IMAGE_PRESET_DESCRIPTION = 'Image work with only the core DSH tools and this plugin: the other installed bundles\' tools stay out of the prompt.'
+export const ARYA_IMAGE_PRESET_DESCRIPTION = 'Image work with the image tools, a small working set and this plugin: the other installed bundles\' tools stay out of the prompt.'
 
 /** Sort position right after Arya Standard (2), where the image work belongs. */
 export const ARYA_IMAGE_PRESET_ORDER = 2.5
-
-/** Row id of the tool-mask row inside the preset. */
-export const ARYA_IMAGE_TOOLSET_ROW_ID = 'arya-image-toolset'
-
-/** Package subpath the tool-mask row mounts. */
-export const ARYA_IMAGE_TOOLSET_MODULE = 'dsh-arya-image-gen/agent-toolset'
 
 /** One plugin row in a preset definition. */
 export interface PresetRow {
@@ -57,42 +53,31 @@ export interface AgentPresetDefinition {
 }
 
 /**
- * Tool names the mask tries to keep besides the image tools.
+ * The rows that give the session its working tools.
  *
- * A preset registered at runtime mounts its rows on the agent plane; the host's
- * own tools are supplied by the composition, and `restrict()` reports them as
- * unknown for this scope, so the mask row drops every name listed here. Keeping
- * the list is therefore honest bookkeeping rather than a capability: it names
- * what this preset would keep on a host that exposes them (a composition-row
- * preset does - see docs/reference-images.md).
+ * Mirrors the Arya Standard preset's row list, minus skills, goals, plan mode
+ * and delegation, plus the web rows that reference hunting needs.
  *
  * @param platform - `process.platform` value of the host.
- * @returns the model-facing tool names a full preset row list would provide.
+ * @returns the rows, in mount order.
  */
-export function presetToolNames(platform: string): string[] {
+export function presetToolRows(platform: string): PresetRow[] {
+  const windows = platform === 'win32'
   return [
-    'read', 'write', 'edit', 'glob', 'grep',
-    platform === 'win32' ? 'pwsh' : 'bash',
-    'job_list', 'job_output', 'job_kill',
-    'todo_write',
-    'web_search', 'web_fetch',
-    'ask_user_question',
-    'present',
+    { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
+    { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
+    // Both shells are declared and one is disabled: the shipped presets do it
+    // this way, and it keeps the row ids stable across platforms.
+    { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash', disabled: windows },
+    { id: 'tool-pwsh', name: '@deepseek-ai/dsh-tool-pwsh', disabled: !windows },
+    { id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs' },
+    { id: 'tool-fs-search', name: '@deepseek-ai/dsh-tool-fs-search', config: { sampleOverCapGlobResults: false } },
+    { id: 'tool-jobs', name: '@deepseek-ai/dsh-tool-jobs' },
+    // Search + fetch: how a real subject's photograph is found before an edit.
+    { id: 'tool-web', name: '@deepseek-ai/dsh-tool-web', config: { fetch: true, searchTimeoutMs: 60_000 } },
+    { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
+    { id: 'present', name: '@deepseek-ai/dsh-tool-present' },
   ]
-}
-
-/**
- * Names the tool mask keeps visible.
- *
- * Image tools first so a truncated log still names them, then the working
- * directory tool the host registers globally, then whatever of the preset's own
- * tool list this host actually restricts.
- *
- * @param platform - `process.platform` value of the host.
- * @returns the allow list handed to the tool-mask row.
- */
-export function agentPresetAllowList(platform: string): string[] {
-  return [...IMAGE_TOOL_NAME_LIST, 'working_directory', ...presetToolNames(platform)]
 }
 
 /**
@@ -118,13 +103,7 @@ export function buildAgentPresetDefinition(options: { platform: string }): Agent
           includeRuntimeContext: true,
         },
       },
-      { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
-      { id: 'present', name: '@deepseek-ai/dsh-tool-present' },
-      {
-        id: ARYA_IMAGE_TOOLSET_ROW_ID,
-        name: ARYA_IMAGE_TOOLSET_MODULE,
-        config: { allow: agentPresetAllowList(options.platform) },
-      },
+      ...presetToolRows(options.platform),
     ],
   }
 }

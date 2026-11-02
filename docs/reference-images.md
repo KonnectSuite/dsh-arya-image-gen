@@ -55,28 +55,15 @@ is an input.
 
 ## Which preset has the web tools
 
-The loop needs `web_search` and `web_fetch`. Today they are present on
-**Standard mode** and **Arya Standard** sessions, and `import_reference_image`
-works there out of the box — that combination is what the walkthrough above was
-verified with.
+`Arya Image` mounts `tool-web` as one of its own rows (search plus fetch), so the
+loop works there directly — as it does on **Standard mode** and **Arya
+Standard**. `Arya Qwen` does not mount the web rows, so it has no search.
 
-The **Arya Image** preset registers through the host's runtime preset API, and a
-preset registered that way mounts its rows on the agent plane: its own image
-tools resolve, but the host's base tools (`read`, `pwsh`, `web_search`, …) are
-supplied by the composition and are reported as unknown for that scope, so a
-mask cannot keep them and the rows do not surface them either. On that preset
-the honest move is to ask for the picture instead:
-
-> attach the photo, or hand me the direct image URL and I'll import it
-
-Making `Arya Image` carry the web tools means declaring it as a **composition
-row** (`preset-arya-image` with `name: '@deepseek-ai/dsh-agent-preset'`) in the
-bundle patch instead of registering it at runtime — the form the shipped presets
-use. That change is tracked, not shipped yet.
-
-On a headless, offline or masked build the same rule applies: ask for the
-picture — an attached image already works as an `edit_image` reference — rather
-than inventing the details silently.
+The history is worth knowing if you extend the preset: an earlier version kept
+the image tools and relied on masking the inherited ones. A mask can only name
+what the host registers globally, so that preset ended up with the image tools
+and none of `read`, `pwsh` or `web_search`. The row list is the mechanism; the
+mask was removed.
 
 ## Failure messages, and what they mean
 

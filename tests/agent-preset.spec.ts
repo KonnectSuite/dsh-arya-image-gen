@@ -3,11 +3,8 @@ import {
   ARYA_IMAGE_PRESET_ID,
   ARYA_IMAGE_PRESET_NAME,
   ARYA_IMAGE_PRESET_ORDER,
-  ARYA_IMAGE_TOOLSET_MODULE,
-  ARYA_IMAGE_TOOLSET_ROW_ID,
-  agentPresetAllowList,
   buildAgentPresetDefinition,
-  presetToolNames,
+  presetToolRows,
 } from '../src/agent-preset/definition.js'
 import { apply as applyToolset } from '../src/agent-preset/toolset.js'
 import { mountAgentPreset } from '../src/agent-preset/register.js'
@@ -23,15 +20,21 @@ describe('arya-image preset definition', () => {
     expect(definition.description.length).toBeGreaterThan(0)
   })
 
-  it('mounts the persona, the two preset-only tools and the mask row', () => {
+  it('declares the row list the session runs, the way the shipped presets do', () => {
     const definition = buildAgentPresetDefinition({ platform: 'win32' })
     expect(definition.plugins.map(row => row.id)).toEqual([
       'persona',
+      'agent-instructions',
+      'time-context',
+      'tool-bash',
+      'tool-pwsh',
+      'tool-fs',
+      'tool-fs-search',
+      'tool-jobs',
+      'tool-web',
       'tool-ask-user',
       'present',
-      ARYA_IMAGE_TOOLSET_ROW_ID,
     ])
-    expect(definition.plugins.at(-1)?.name).toBe(ARYA_IMAGE_TOOLSET_MODULE)
   })
 
   it('carries an image-focused persona without replacing the runtime context', () => {
@@ -43,21 +46,21 @@ describe('arya-image preset definition', () => {
     expect(config.includeRuntimeContext).toBe(true)
   })
 
-  it('tries to keep the image tools, the working-directory tool and the tools a full preset would provide', () => {
-    const allow = agentPresetAllowList('win32')
-    expect(allow.slice(0, IMAGE_TOOL_NAME_LIST.length)).toEqual([...IMAGE_TOOL_NAME_LIST])
-    expect(allow).toContain('working_directory')
-    expect(allow).toContain('read')
-    expect(allow).toContain('pwsh')
-    expect(allow).toContain('web_search')
-    expect(allow).toContain('web_fetch')
-    expect(allow).toContain('ask_user_question')
-    expect(allow).not.toContain('bash')
-    expect(allow).not.toContain('subagent')
-    // Whatever the scope cannot restrict is dropped by the mask row itself.
-    expect(presetToolNames('win32')).toContain('web_search')
-    expect(presetToolNames('linux')).toContain('bash')
-    expect(presetToolNames('linux')).not.toContain('pwsh')
+  it('mounts the web rows reference hunting needs', () => {
+    const web = presetToolRows('win32').find(row => row.id === 'tool-web')
+    expect(web?.name).toBe('@deepseek-ai/dsh-tool-web')
+    expect(web?.config).toEqual({ fetch: true, searchTimeoutMs: 60_000 })
+    expect(web?.disabled).toBeUndefined()
+  })
+
+  it('switches the shell with disabled rows instead of picking one', () => {
+    const windows = presetToolRows('win32')
+    expect(windows.find(row => row.id === 'tool-bash')?.disabled).toBe(true)
+    expect(windows.find(row => row.id === 'tool-pwsh')?.disabled).toBe(false)
+
+    const linux = presetToolRows('linux')
+    expect(linux.find(row => row.id === 'tool-bash')?.disabled).toBe(false)
+    expect(linux.find(row => row.id === 'tool-pwsh')?.disabled).toBe(true)
   })
 })
 

@@ -102,6 +102,12 @@ function toolsetHarness(options: { present?: string[]; restrictThrows?: boolean 
 }
 
 describe('arya-image tool mask row', () => {
+  it('declares the tools service, which a preset row cannot otherwise reach', () => {
+    // Without this the host reports the whole preset broken:
+    // `arya-image-toolset (…): cannot get property "tools" without inject`.
+    expect((applyToolset as unknown as { inject: string[] }).inject).toEqual(['tools'])
+  })
+
   it('restricts to the allow list, keeping only tools the host actually has', () => {
     const h = toolsetHarness({ present: ['generate_image', 'read', 'pwsh'] })
     applyToolset(h.ctx as never, { allow: ['generate_image', 'read', 'pwsh', 'web_search'] })

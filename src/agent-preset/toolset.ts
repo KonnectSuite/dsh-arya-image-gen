@@ -35,6 +35,7 @@ export function apply(ctx: Context, config: ToolsetConfig = {}): void {
     return
   }
 
+
   // `restrict()` refuses names the host does not register, so keep only the
   // names that exist right now. A profile without, say, `tool-jobs` simply
   // contributes fewer names instead of failing the whole preset.
@@ -54,6 +55,14 @@ export function apply(ctx: Context, config: ToolsetConfig = {}): void {
     ctx.logger?.warn?.(`arya-image-toolset: tool mask not applied: ${describe(error)}`)
   }
 }
+
+// A preset row runs in a scoped context where only declared services are
+// visible; `ctx.tools` throws "cannot get property tools without inject"
+// otherwise, and the host then reports the whole preset broken because of it.
+// The Loader reads `inject` from the module, so it has to be a named export:
+// a property on `apply` alone never reached it.
+export const inject = ['tools']
+;(apply as unknown as { inject: string[] }).inject = inject
 
 /**
  * Describe a thrown value for a log line.

@@ -73,11 +73,46 @@ export function mountAgentPreset(ctx: Context, config: AgentPresetMountConfig = 
     (disposer) => {
       release = disposer
       ctx.logger?.info?.(`arya-image-preset: registered ${definition.id} (${definition.name})`)
+      reportBrokenRows(ctx, presets, definition)
     },
     (error: unknown) => {
       ctx.logger?.warn?.(`arya-image-preset: preset not registered: ${describe(error)}`)
     },
   )
+}
+
+/**
+ * Log the registry's own activation verdict for this preset.
+ *
+ * A registered definition can still be unusable: one row that fails to activate
+ * makes the host report the preset `broken`, and a client that hides broken
+ * presets then shows nothing at all. Reading the published list is the only way
+ * to see that verdict from inside the plugin.
+ *
+ * @param ctx - the plugin context, for the logger.
+ * @param presets - the registry that holds the definition.
+ * @param definition - the definition that was just registered.
+ */
+function reportBrokenRows(ctx: Context, presets: AgentPresetRegistry, definition: AgentPresetDefinition): void {
+  const list = (presets as { list?: () => Promise<readonly PresetRowVerdict[]> }).list
+  if (typeof list !== 'function') return
+  void Promise.resolve(list.call(presets)).then(
+    (rows) => {
+      const row = rows.find(entry => entry.id === definition.id)
+      if (row?.broken !== undefined && row.broken.length > 0) {
+        ctx.logger?.warn?.(`arya-image-preset: the host reports ${definition.id} broken: ${row.broken}`)
+      }
+    },
+    () => {
+      // The list is a diagnostic surface; a failure to read it changes nothing.
+    },
+  )
+}
+
+/** The part of one registry listing this module reads. */
+interface PresetRowVerdict {
+  id: string
+  broken?: string
 }
 
 // The Loader reads this to hold the mount until the registry is available.

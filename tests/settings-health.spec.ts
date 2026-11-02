@@ -8,6 +8,9 @@ function harness(settings?: object) {
   const ctx = {
     tools: { register: vi.fn() },
     effect: (setup: () => unknown) => setup(),
+    // Stand-in for the cordis mount point the preset registration uses; this
+    // harness provides no preset registry, so the mount registers nothing.
+    plugin: vi.fn(),
     webServer: { register: (route: typeof routes[number]) => { routes.push(route); return () => {} } },
     credentials: {}, attachments: {}, logger: { warn },
     inject: (services: string[], callback: (owner: unknown) => unknown) => {

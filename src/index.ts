@@ -33,8 +33,7 @@ import { RENDER_LIMITS } from './render/render.js'
 import { describeRenderer, renderFromStudio, rendererHealth } from './render-service.js'
 import { serveRender } from './render-route.js'
 import { checkWorkflowsAgainstInstall } from './validate-workflows.js'
-import { buildAgentPresetDefinition } from './agent-preset/definition.js'
-import { registerAgentPreset } from './agent-preset/register.js'
+import { mountAgentPreset } from './agent-preset/register.js'
 
 export { Config } from './config.js'
 export { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta } from './image-route.js'
@@ -118,10 +117,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     onChange: () => {},
   })
   // A host surface, not a session one: the preset is registered once at boot
-  // and withdrawn with this plugin's fiber. A composition without a preset
-  // registry (headless, SDK) simply never sees it.
+  // and withdrawn with this plugin's fiber. Mounted as a plugin of its own so
+  // the Loader waits for `agentPresets` and registers while the composition is
+  // still settling; a composition without that service (headless, SDK) simply
+  // never sees it.
   if (current().agentPreset !== false) {
-    registerAgentPreset(ctx, buildAgentPresetDefinition({ platform: process.platform }))
+    ctx.plugin(mountAgentPreset, { platform: process.platform })
   }
   // Every HTTP surface needs webServer, which only the web-app bundle (web,
   // desktop) provides; the headless, acp and sdk profiles have none. Mount the

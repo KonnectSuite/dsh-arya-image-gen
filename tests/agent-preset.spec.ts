@@ -9,7 +9,7 @@ import {
   buildAgentPresetDefinition,
 } from '../src/agent-preset/definition.js'
 import { apply as applyToolset } from '../src/agent-preset/toolset.js'
-import { registerAgentPreset } from '../src/agent-preset/register.js'
+import { mountAgentPreset } from '../src/agent-preset/register.js'
 import { coreToolNames, IMAGE_TOOL_NAME_LIST } from '../src/shared.js'
 
 describe('arya-image preset definition', () => {
@@ -141,46 +141,47 @@ function registerHarness(options: { registry?: unknown } = {}) {
   const effect = vi.fn((callback: () => () => void) => { callback() })
   const info = vi.fn()
   const warn = vi.fn()
-  const injected: string[][] = []
-  const presetCtx = {
-    agentPresets: options.registry,
-    effect,
-    logger: { info, warn },
-  }
   const ctx = {
     logger: { info, warn },
-    inject: (names: string[], callback: (inner: unknown) => void) => { injected.push(names); callback(presetCtx) },
+    effect,
+    // The mount point reads the service through `ctx.get`, exactly as the
+    // AryaCode presets do; a missing service is reported, not thrown.
+    get: (name: string) => (name === 'agentPresets' ? options.registry : undefined),
   }
-  return { ctx, presetCtx, injected, info, warn }
+  return { ctx, effect, info, warn }
 }
 
 describe('arya-image preset registration', () => {
+  it('declares the registry as an inject dependency so the Loader waits for it', () => {
+    expect((mountAgentPreset as unknown as { inject: string[] }).inject).toEqual(['agentPresets'])
+  })
+
   it('registers once against the host registry and releases with the fiber', async () => {
     const release = vi.fn()
     const register = vi.fn(async () => release)
     const h = registerHarness({ registry: { register } })
-    registerAgentPreset(h.ctx as never, buildAgentPresetDefinition({ platform: 'win32' }))
-    expect(h.injected[0]).toEqual(['agentPresets'])
+    mountAgentPreset(h.ctx as never, { platform: 'win32' })
     expect(register).toHaveBeenCalledTimes(1)
     expect(register.mock.calls[0][0]).toMatchObject({ id: 'arya-image' })
     // The fiber's disposer releases the registered definition.
-    const dispose = h.presetCtx.effect.mock.calls[0][0]()
+    const dispose = h.effect.mock.calls[0][0]()
     await Promise.resolve()
     await Promise.resolve()
     dispose()
     expect(release).toHaveBeenCalledTimes(1)
+    expect(h.info).toHaveBeenCalledWith(expect.stringContaining('registered arya-image'))
   })
 
   it('stays silent on a composition with no preset registry', () => {
     const h = registerHarness()
-    expect(() => registerAgentPreset(h.ctx as never, buildAgentPresetDefinition({ platform: 'win32' }))).not.toThrow()
+    expect(() => mountAgentPreset(h.ctx as never, { platform: 'win32' })).not.toThrow()
     expect(h.info).toHaveBeenCalled()
   })
 
   it('logs a rejected registration instead of failing the plugin', async () => {
     const register = vi.fn(async () => { throw new Error('duplicate preset id') })
     const h = registerHarness({ registry: { register } })
-    registerAgentPreset(h.ctx as never, buildAgentPresetDefinition({ platform: 'win32' }))
+    mountAgentPreset(h.ctx as never, { platform: 'win32' })
     await Promise.resolve()
     await Promise.resolve()
     expect(h.warn).toHaveBeenCalledWith(expect.stringContaining('duplicate preset id'))

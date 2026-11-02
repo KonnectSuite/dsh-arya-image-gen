@@ -16,6 +16,9 @@ function harness(options: { settingsService?: unknown } = {}): { ctx: Context; t
   const ctx = {
     tools: { register: (tool: ToolDefinition) => { tools.push(tool) } },
     effect: (setup: () => unknown) => setup(),
+    // Stand-in for the cordis mount point the preset registration uses; no
+    // preset registry is provided here, so the mount never registers.
+    plugin: vi.fn(),
     webServer: { register: vi.fn(() => () => {}) },
     credentials: { resolve: vi.fn(async () => ({ value: 'test-key' })) },
     inject: vi.fn((services: string[], callback: (owner: Context) => void) => {

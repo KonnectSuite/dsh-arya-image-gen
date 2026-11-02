@@ -10,7 +10,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { DEFAULT_COMFYUI_BASE_URL, DEFAULT_COMFYUI_EXTRA_ARGS, DEFAULT_COMFYUI_PYTHON_EXE, DEFAULT_COMFYUI_SERVER_DIR, comfyUIEndpointURL, isLocalComfyUIEndpoint, type ComfyUIServerStatus } from './shared.js'
+import { COMFYUI_LAUNCH_MODES, DEFAULT_COMFYUI_BASE_URL, DEFAULT_COMFYUI_EXTRA_ARGS, DEFAULT_COMFYUI_PYTHON_EXE, DEFAULT_COMFYUI_SERVER_DIR, DEFAULT_COMFYUI_TASK_NAME, comfyUIEndpointURL, isLocalComfyUIEndpoint, type ComfyUILaunchMode, type ComfyUIServerStatus } from './shared.js'
 import { parseComfyUIExtraArgs } from './config.js'
 import { parseComfyUIHeaders } from './shared.js'
 
@@ -20,6 +20,8 @@ export interface ComfyUIServerConfig {
   serverDir: string
   extraArgs: string
   headers: Record<string, string>
+  launchMode: ComfyUILaunchMode
+  taskName: string
 }
 
 export function comfyUIServerConfigOf(config: {
@@ -28,18 +30,25 @@ export function comfyUIServerConfigOf(config: {
   comfyuiServerDir?: string
   comfyuiExtraArgs?: string
   comfyuiHeadersJson?: string
+  comfyuiLaunchMode?: string
+  comfyuiScheduledTaskName?: string
 }): ComfyUIServerConfig {
+  const mode = COMFYUI_LAUNCH_MODES.includes(config.comfyuiLaunchMode as ComfyUILaunchMode)
+    ? config.comfyuiLaunchMode as ComfyUILaunchMode
+    : 'auto'
   return {
     baseURL: config.comfyuiBaseURL?.trim() || DEFAULT_COMFYUI_BASE_URL,
     pythonExe: config.comfyuiPythonExe?.trim() || DEFAULT_COMFYUI_PYTHON_EXE,
     serverDir: config.comfyuiServerDir?.trim() || DEFAULT_COMFYUI_SERVER_DIR,
     extraArgs: config.comfyuiExtraArgs ?? DEFAULT_COMFYUI_EXTRA_ARGS,
     headers: parseComfyUIHeaders(config.comfyuiHeadersJson),
+    launchMode: mode,
+    taskName: config.comfyuiScheduledTaskName?.trim() || DEFAULT_COMFYUI_TASK_NAME,
   }
 }
 
 const STATS_TIMEOUT_MS = 5_000
-const START_TIMEOUT_MS = 120_000
+const START_TIMEOUT_MS = 180_000
 const STOP_TIMEOUT_MS = 30_000
 const POLL_MS = 2_000
 
@@ -82,6 +91,28 @@ export class ComfyUIServerManager {
       if (await this.probe().then(probe => probe.up)) {
         return await this.status()
       }
+      // A stale instance that holds the port but never answers would make the
+      // new launch fail to bind, and the failure looks like "did not start".
+      await this.clearStaleProcesses()
+      const plan = this.launchPlan()
+      if (plan.launch === 'scheduled-task') {
+        // The task carries the whole launch line (venv, args, working dir), so
+        // the plugin does not need its own copy of any of it.
+        const name = this.deps().taskName
+        let failure = runScheduledTask('run', name)
+        // Task Scheduler refuses /run while the task still reads Running, which
+        // happens after a stop that killed the child before the launcher exited.
+        if (failure !== undefined && /already running/i.test(failure)) {
+          runScheduledTask('end', name)
+          await this.waitForTaskIdle(name)
+          failure = runScheduledTask('run', name)
+        }
+        if (failure !== undefined) throw new Error(`Could not start scheduled task "${name}": ${failure}. Create it in Task Scheduler, or switch Launch method to "Python process (main.py)" and set the interpreter and ComfyUI directory.`)
+        return await this.waitUntilUp()
+      }
+      if (plan.launch === 'external') {
+        throw new Error(`${plan.hint} Nothing to start automatically.`)
+      }
       const { pythonExe, serverDir, extraArgs, baseURL } = this.deps()
       if (pythonExe.trim().length === 0) throw new Error('Set the Python executable for your ComfyUI installation in Settings > Plugins > Image Generation, or start ComfyUI yourself.')
       if (!fs.existsSync(pythonExe)) throw new Error(`Python interpreter not found: ${pythonExe} — set the path in Settings > Plugins > Image Generation.`)
@@ -100,13 +131,7 @@ export class ComfyUIServerManager {
         fs.closeSync(outFd)
         fs.closeSync(errFd)
       }
-      const deadline = Date.now() + START_TIMEOUT_MS
-      while (Date.now() < deadline) {
-        await delay(POLL_MS)
-        if ((await this.probe()).up) return await this.status()
-      }
-      const tail = this.readLogTail()
-      throw new Error(`ComfyUI did not answer on ${baseURL} within ${String(Math.round(START_TIMEOUT_MS / 1000))} s.${tail.length > 0 ? ` Last output:\n${tail}` : ''}`)
+      return await this.waitUntilUp(baseURL)
     } finally {
       this.busy = false
     }
@@ -117,6 +142,19 @@ export class ComfyUIServerManager {
     if (!isLocalComfyUIEndpoint(this.deps().baseURL)) throw new Error('Stop is available only for a ComfyUI server on this machine. The configured endpoint is remote — stop it there instead.')
     this.busy = true
     try {
+      // A scheduled-task launch has to be ended at the task too: killing only
+      // the python process leaves the task marked Running, and a restart-on-
+      // failure task would resurrect it.
+      const plan = this.launchPlan()
+      if (plan.launch === 'scheduled-task') {
+        const name = this.deps().taskName
+        const failure = runScheduledTask('end', name)
+        if (failure !== undefined) this.warn(`Could not end scheduled task "${name}": ${failure}`)
+        // Wait for the task to actually leave Running: a python child can
+        // outlive the launcher, and the next /run is refused while it is still
+        // marked Running.
+        await this.waitForTaskIdle(name)
+      }
       const port = this.portOf()
       const pids = await this.findComfyPids(port)
       if (this.childPid !== undefined && !pids.includes(this.childPid)) pids.push(this.childPid)
@@ -148,9 +186,10 @@ export class ComfyUIServerManager {
   }
 
   async status(): Promise<ComfyUIServerStatus> {
-    const { baseURL } = this.deps()
+    const { baseURL, launchMode, taskName } = this.deps()
     const probe = await this.probe()
     const pids = isLocalComfyUIEndpoint(baseURL) ? await this.findComfyPids(this.portOf()) : []
+    const plan = this.launchPlan()
     return {
       up: probe.up,
       managed: this.childPid !== undefined && pids.includes(this.childPid),
@@ -162,7 +201,81 @@ export class ComfyUIServerManager {
       ...(probe.vramTotalBytes === undefined ? {} : { vramTotalBytes: probe.vramTotalBytes }),
       baseUrl: baseURL,
       busy: this.busy,
+      launchMode,
+      effectiveLaunch: plan.launch,
+      taskName,
+      ...(plan.taskState === undefined ? {} : { taskState: plan.taskState }),
+      launchHint: plan.hint,
     }
+  }
+
+  /** Poll /system_stats until the server answers, or fail with the log tail. */
+  private async waitUntilUp(baseURL = this.deps().baseURL): Promise<ComfyUIServerStatus> {
+    const deadline = Date.now() + START_TIMEOUT_MS
+    while (Date.now() < deadline) {
+      await delay(POLL_MS)
+      if ((await this.probe()).up) return await this.status()
+    }
+    const tail = this.readLogTail()
+    const task = readScheduledTask(this.deps().taskName)
+    const taskNote = this.launchPlan().launch === 'scheduled-task' && task?.state !== undefined
+      ? ` Task "${this.deps().taskName}" reads ${task.state}.`
+      : ''
+    throw new Error(`ComfyUI did not answer on ${baseURL} within ${String(Math.round(START_TIMEOUT_MS / 1000))} s.${taskNote}${tail.length > 0 ? ` Last output:\n${tail}` : ''}`)
+  }
+
+  /** Wait (bounded) for the scheduled task to stop reporting Running. */
+  private async waitForTaskIdle(name: string, timeoutMs = 30_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const task = readScheduledTask(name)
+      if (task === undefined || !/running/i.test(task.state ?? '')) return
+      await delay(1_000)
+    }
+  }
+
+  /**
+   * Kill ComfyUI processes that hold the port without answering.
+   *
+   * Called only after the probe said the server is down, so anything matching
+   * is a leftover of a killed launcher: it would block the next instance's bind
+   * and turn a clean start into a timeout.
+   */
+  private async clearStaleProcesses(): Promise<void> {
+    const stale = await this.findComfyPids(this.portOf())
+    if (stale.length === 0) return
+    this.warn(`ComfyUI is not answering but ${String(stale.length)} process(es) still hold port ${this.portOf()}; clearing them before starting.`)
+    for (const pid of stale) spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
+    await delay(2_000)
+  }
+
+  /**
+   * Decide how Start and Stop should reach this machine's ComfyUI.
+   *
+   * With `auto`, a scheduled task by the configured name wins (that is how a
+   * tray/service install starts it), then the process path. `scheduled-task`
+   * and `process` force one. State is read on every call so the card can show
+   * "via scheduled task ComfyUI (Ready)" without the user configuring a script.
+   */
+  private launchPlan(): { launch: 'scheduled-task' | 'process' | 'external', hint: string, taskState?: string } {
+    const { launchMode, taskName, pythonExe, serverDir } = this.deps()
+    const task = readScheduledTask(taskName)
+    const taskHint = task === undefined
+      ? `no scheduled task named "${taskName}"`
+      : `scheduled task "${taskName}" (${task.state ?? 'state unknown'})`
+    const processReady = pythonExe.trim().length > 0 && serverDir.trim().length > 0 && fs.existsSync(path.join(serverDir, 'main.py'))
+    const processHint = processReady ? `main.py under ${serverDir}` : 'no ComfyUI directory with main.py configured'
+    if (launchMode === 'scheduled-task') {
+      return {
+        launch: 'scheduled-task',
+        hint: `Using ${taskHint}.`,
+        ...(task?.state === undefined ? {} : { taskState: task.state }),
+      }
+    }
+    if (launchMode === 'process') return { launch: 'process', hint: `Using ${processHint}.` }
+    if (task !== undefined) return { launch: 'scheduled-task', hint: `Auto: using ${taskHint}.`, ...(task.state === undefined ? {} : { taskState: task.state }) }
+    if (processReady) return { launch: 'process', hint: `Auto: using ${processHint}.` }
+    return { launch: 'external', hint: `Auto: ${taskHint} and ${processHint}; start ComfyUI yourself or create that scheduled task.` }
   }
 
   private assertNotBusy(): void {
@@ -222,6 +335,22 @@ export class ComfyUIServerManager {
     if (run.status !== 0) return []
     return run.stdout.split(/\r?\n/).map(line => Number(line.trim())).filter(pid => Number.isSafeInteger(pid) && pid > 0)
   }
+}
+
+/** State Task Scheduler reports for one task, or undefined when it does not exist. */
+function readScheduledTask(name: string): { state?: string } | undefined {
+  const run = spawnSync('schtasks', ['/query', '/tn', name, '/fo', 'LIST'], { windowsHide: true, encoding: 'utf8', timeout: 15_000 })
+  if (run.status !== 0) return undefined
+  const match = /^Status:\s*(.+)$/imu.exec(run.stdout ?? '')
+  const state = match?.[1]?.trim()
+  return { ...(state === undefined || state === '' ? {} : { state }) }
+}
+
+/** Run one schtasks verb; returns stderr text when it fails. */
+function runScheduledTask(verb: 'run' | 'end', name: string): string | undefined {
+  const run = spawnSync('schtasks', [`/${verb}`, '/tn', name], { windowsHide: true, encoding: 'utf8', timeout: 20_000 })
+  if (run.status === 0) return undefined
+  return (run.stderr || run.stdout || '').trim().slice(0, 400) || `schtasks /${verb} exited ${String(run.status)}`
 }
 
 function firstDevice(value: unknown): { device: string; vramFreeBytes?: number; vramTotalBytes?: number } | undefined {

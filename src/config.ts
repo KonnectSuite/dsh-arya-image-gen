@@ -7,6 +7,7 @@ import {
   DEFAULT_COMFYUI_EXTRA_ARGS,
   DEFAULT_COMFYUI_PYTHON_EXE,
   DEFAULT_COMFYUI_SERVER_DIR,
+  DEFAULT_COMFYUI_TASK_NAME,
   DEFAULT_COMFYUI_TIMEOUT_MS,
   DEFAULT_COMFYUI_WORKFLOW_LABEL,
   IMAGE_PROVIDERS,
@@ -65,6 +66,10 @@ export interface Config {
   comfyuiExtraArgs?: string
   /** Launch the ComfyUI server automatically when the plugin boots and it is down. */
   comfyuiAutoStart?: boolean
+  /** How Start/Stop reach this machine's ComfyUI. */
+  comfyuiLaunchMode?: 'auto' | 'scheduled-task' | 'process'
+  /** Task Scheduler task the plugin runs and ends when using the scheduled-task launch. */
+  comfyuiScheduledTaskName?: string
   /** Explicit Chromium path for HTML/SVG rendering; empty means auto-detect. */
   renderBrowserPath?: string
   /** Default canvas for a render that does not state its own size. */
@@ -125,6 +130,10 @@ export const Config = z.object({
   comfyuiServerDir: volatile(z.string().default(DEFAULT_COMFYUI_SERVER_DIR)),
   comfyuiExtraArgs: volatile(z.string().default(DEFAULT_COMFYUI_EXTRA_ARGS)),
   comfyuiAutoStart: volatile(z.boolean().default(false)),
+  /** How Start/Stop reach this machine's ComfyUI: a scheduled task, a spawned python, or auto. */
+  comfyuiLaunchMode: volatile(z.union([z.const('auto'), z.const('scheduled-task'), z.const('process')]).default('auto')),
+  /** Task Scheduler name to run/end when the launch mode is the scheduled task. */
+  comfyuiScheduledTaskName: volatile(z.string().default(DEFAULT_COMFYUI_TASK_NAME)),
   renderBrowserPath: volatile(z.string().default('')),
   renderDefaultWidth: volatile(z.number().min(16).max(8192).default(1200)),
   renderDefaultHeight: volatile(z.number().min(16).max(8192).default(630)),

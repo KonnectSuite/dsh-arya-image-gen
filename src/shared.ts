@@ -754,6 +754,13 @@ export function mergeComfyUIPrompt(preset: string | undefined, user: string): st
   return `${presetText}, ${userText}`
 }
 
+/** How the plugin starts this machine's ComfyUI. */
+export const COMFYUI_LAUNCH_MODES = ['auto', 'scheduled-task', 'process'] as const
+export type ComfyUILaunchMode = typeof COMFYUI_LAUNCH_MODES[number]
+
+/** Windows scheduled task the plugin looks for, the name the tray helper uses. */
+export const DEFAULT_COMFYUI_TASK_NAME = 'ComfyUI'
+
 /** Local ComfyUI server lifecycle state, surfaced through the server route. */
 export interface ComfyUIServerStatus {
   /** Up when /system_stats answered; independent of who launched the process. */
@@ -772,6 +779,16 @@ export interface ComfyUIServerStatus {
   baseUrl: string
   /** True while a start/stop transition is in flight. */
   busy: boolean
+  /** Launch path the settings asked for. */
+  launchMode: ComfyUILaunchMode
+  /** Launch path actually used for this machine (auto resolves to one of the others). */
+  effectiveLaunch: 'scheduled-task' | 'process' | 'external'
+  /** Scheduled task name the plugin looks for. */
+  taskName: string
+  /** State the Task Scheduler reports, when the task exists. */
+  taskState?: string
+  /** Why the launch path resolved the way it did, for the card to show. */
+  launchHint: string
 }
 
 export const DEFAULT_MODELS: Record<ImageProvider, string> = {

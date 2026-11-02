@@ -26,6 +26,7 @@ import {
   DEFAULT_COMFYUI_EXTRA_ARGS,
   DEFAULT_COMFYUI_PYTHON_EXE,
   DEFAULT_COMFYUI_SERVER_DIR,
+  DEFAULT_COMFYUI_TASK_NAME,
   DEFAULT_COMFYUI_TIMEOUT_MS,
   IMAGE_GENERATION_ENTRY_ID,
   IMAGE_GENERATION_NAMESPACE,
@@ -974,6 +975,8 @@ interface ImageSettings {
   comfyuiServerDir?: string
   comfyuiExtraArgs?: string
   comfyuiAutoStart?: boolean
+  comfyuiLaunchMode?: 'auto' | 'scheduled-task' | 'process'
+  comfyuiScheduledTaskName?: string
   saveToWorkspace?: boolean
   workspaceFolder?: string
   /** Chromium path for HTML/SVG rendering; empty auto-detects. */
@@ -1001,6 +1004,8 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
   const [serverDir, setServerDir] = useState('')
   const [extraArgs, setExtraArgs] = useState('')
   const [autoStart, setAutoStart] = useState(false)
+  const [launchMode, setLaunchMode] = useState<'auto' | 'scheduled-task' | 'process'>('auto')
+  const [taskName, setTaskName] = useState(DEFAULT_COMFYUI_TASK_NAME)
   const [saveToWorkspace, setSaveToWorkspace] = useState(true)
   const [workspaceFolder, setWorkspaceFolder] = useState('dsh-arya-image-gen')
   const [browserPath, setBrowserPath] = useState('')
@@ -1030,6 +1035,8 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     setServerDir(value?.comfyuiServerDir ?? DEFAULT_COMFYUI_SERVER_DIR)
     setExtraArgs(value?.comfyuiExtraArgs ?? DEFAULT_COMFYUI_EXTRA_ARGS)
     setAutoStart(value?.comfyuiAutoStart === true)
+    setLaunchMode(value?.comfyuiLaunchMode ?? 'auto')
+    setTaskName(value?.comfyuiScheduledTaskName ?? DEFAULT_COMFYUI_TASK_NAME)
     setSaveToWorkspace(value?.saveToWorkspace !== false)
     setWorkspaceFolder(value?.workspaceFolder ?? 'dsh-arya-image-gen')
     setBrowserPath(value?.renderBrowserPath ?? '')
@@ -1082,6 +1089,8 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     if (pythonExe.trim() !== (value?.comfyuiPythonExe ?? DEFAULT_COMFYUI_PYTHON_EXE)) void save('comfyuiPythonExe', pythonExe.trim())
     if (serverDir.trim() !== (value?.comfyuiServerDir ?? DEFAULT_COMFYUI_SERVER_DIR)) void save('comfyuiServerDir', serverDir.trim())
     if (extraArgs.trim() !== (value?.comfyuiExtraArgs ?? DEFAULT_COMFYUI_EXTRA_ARGS)) void save('comfyuiExtraArgs', extraArgs.trim())
+    if (launchMode !== (value?.comfyuiLaunchMode ?? 'auto')) void save('comfyuiLaunchMode', launchMode)
+    if (taskName.trim() !== (value?.comfyuiScheduledTaskName ?? DEFAULT_COMFYUI_TASK_NAME)) void save('comfyuiScheduledTaskName', taskName.trim())
   }
 
   /** Load the live server status; called on mount, after an action, and on demand. */
@@ -1312,7 +1321,23 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
             <span className="dsh-ig-hint">Remote server: generation, editing, and status use this endpoint. Start / stop run on the server's own machine, so this card only probes it. On that machine, start ComfyUI with --listen 0.0.0.0, open the port in its firewall, and put HTTPS or a proxy token in Request headers when the proxy needs one.</span>
           ) : (
             <>
-              <span className="dsh-ig-hint">Start launches main.py with the configured Python; Stop matches only ComfyUI's own process, never other listeners on the port.</span>
+              <span className="dsh-ig-hint">{status?.launchHint ?? 'Start and Stop use the ComfyUI on this machine.'}</span>
+              <label className="dsh-ig-field">
+                <span className="dsh-ig-label">Launch method</span>
+                <select className="dsh-ig-input" value={launchMode} onChange={event => { const next = event.target.value as 'auto' | 'scheduled-task' | 'process'; setLaunchMode(next); void save('comfyuiLaunchMode', next) }} disabled={disabled}>
+                  <option value="auto">Automatic — scheduled task first, then Python</option>
+                  <option value="scheduled-task">Windows scheduled task</option>
+                  <option value="process">Python process (main.py)</option>
+                </select>
+                <span className="dsh-ig-hint">Automatic needs no paths: if a task named below exists, Start runs it and Stop ends it. Only the Python route asks for an interpreter and a ComfyUI directory.</span>
+              </label>
+              <label className="dsh-ig-field">
+                <span className="dsh-ig-label">Scheduled task name</span>
+                <input className="dsh-ig-input" value={taskName} onChange={event => setTaskName(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_TASK_NAME} disabled={disabled} />
+                <span className="dsh-ig-hint">{status?.taskState === undefined ? 'No task with this name was found on this machine.' : `Task state: ${status.taskState}.`}</span>
+              </label>
+              {launchMode === 'scheduled-task' ? null : (
+                <>
               <label className="dsh-ig-field">
                 <span className="dsh-ig-label">Python executable</span>
                 <input className="dsh-ig-input" value={pythonExe} onChange={event => setPythonExe(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={'C:\\path\\to\\python.exe'} disabled={disabled} />
@@ -1326,6 +1351,8 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
                 <span className="dsh-ig-label">Extra main.py arguments</span>
                 <input className="dsh-ig-input" value={extraArgs} onChange={event => setExtraArgs(event.target.value)} onBlur={commitServerFields} onKeyDown={event => { if (event.key === 'Enter') commitServerFields() }} placeholder={DEFAULT_COMFYUI_EXTRA_ARGS} disabled={disabled} />
               </label>
+                </>
+              )}
               <label className="dsh-ig-check-row">
                 <input type="checkbox" checked={autoStart} onChange={event => { setAutoStart(event.target.checked); void save('comfyuiAutoStart', event.target.checked) }} disabled={disabled} />
                 <span className="dsh-ig-label">Start ComfyUI automatically when the plugin loads</span>

@@ -78,14 +78,16 @@ Placeholders, roles, size presets, the ready-made pack and the one-workflow-per-
 
 ## Server Control
 
-The settings card can start, stop, and restart the local ComfyUI process:
+The settings card can start, stop, and restart the local ComfyUI:
 
-- **Start** launches `main.py` with the configured Python executable and extra arguments, then waits for `/system_stats`.
+- **Launch method — Automatic** (default) needs no paths: if a Windows scheduled task named `ComfyUI` exists, Start runs it and Stop ends it; otherwise the plugin falls back to the Python route. The card says which path it picked and what state the task is in.
+- **Scheduled task** — Start is `schtasks /run`, Stop is `schtasks /end` plus a port backstop, so a tray/service install that already knows how to launch ComfyUI keeps owning that knowledge.
+- **Python process (main.py)** — Start launches `main.py` with the configured interpreter and extra arguments; this is the only route that asks for paths.
 - **Stop** targets only Python processes whose command line runs ComfyUI's `main.py` on the configured port. Other listeners on that port are never touched.
-- **Restart** stops and starts in one action.
+- **Restart** stops and starts in one action; a stale process that holds the port without answering is cleared first, and a task stuck in `Running` is ended before the next run.
 - **Auto-start** launches the server when the plugin loads if it is not already up.
 
-The live status chip shows the ComfyUI version, GPU, and available VRAM when the server is running.
+The live status chip shows the ComfyUI version, GPU, and available VRAM when the server is running, and the launch hint reads like `Auto: using scheduled task "ComfyUI" (Running).`
 
 ### Generation details and live progress
 

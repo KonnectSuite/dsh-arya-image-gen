@@ -5,6 +5,17 @@ description: Choose the right ComfyUI workflow in Arya Image Gen instead of inhe
 
 # Choosing a workflow
 
+**ComfyUI is the default route.** Use `generate_image`, `generate_images` and
+`edit_image` for every image request unless the user asks for another route or
+the picture is really a layout job — exact, legible text, tables, a poster whose
+words must be perfect — in which case `render_html` beats a diffusion model. Do
+not reach for HTML or SVG because they feel safer.
+
+If a ComfyUI call fails with a connection error, the server is down or
+unreachable: say so and offer to start it (Settings → Plugins → Arya Image Gen →
+Server → **Start**; on the machine that runs it, a Windows scheduled task or the
+Python path in that card). Do not silently produce the image another way.
+
 The plugin already picks by role: generation resolves the active text-to-image
 workflow, `edit_image` resolves the active image-to-image one. Role is not the
 same as *intent*, though — two text-to-image workflows can differ in model, speed

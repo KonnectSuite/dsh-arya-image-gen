@@ -72,7 +72,6 @@ import {
   type ConversationImageRevisionChain,
 } from './conversation-image-revisions.js'
 import { conversationRegenerateRequest } from './conversation-regenerate.js'
-import { ImageProviderPill, PROVIDER_PILL_STYLE, type ProviderPillFace } from './provider-pill.js'
 import { writeSetting } from './settings-write.js'
 
 /** Build timestamp injected by tsdown at bundle time. */
@@ -296,9 +295,6 @@ const DICT = {
     saveToWorkspaceHint: 'Write each generated image as a file into the session workspace.',
     folder: 'Workspace folder',
     folderHint: 'Subdirectory of the session workspace; empty means the workspace root.',
-    uiSection: 'Interface',
-    showPill: 'Show the image provider pill in the chat input bar',
-    showPillHint: 'Adds a small pill to the composer tool row for switching the default image provider without opening settings; off by default.',
     fetchModels: 'Fetch models',
     fetchingModels: 'Fetching…',
     fetchModelsHint: 'Click "Fetch models" to list image-capable models with the stored key; manual input still works.',
@@ -704,7 +700,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-image-gen'
-    style.textContent = `${STYLE}\n${STUDIO_STYLE}\n${INSPIRATION_STYLE}\n${PROVIDER_PILL_STYLE}\n${TL_CSS}\n${TL_THEME_CSS}`
+    style.textContent = `${STYLE}\n${STUDIO_STYLE}\n${INSPIRATION_STYLE}\n${TL_CSS}\n${TL_THEME_CSS}`
     document.head.appendChild(style)
     return () => {
       style.remove()
@@ -785,22 +781,10 @@ export function apply(ctx: Context): void {
       inject: injectSettingsFace,
     }, ImageGenerationSettingsCard))
   }
-  // Composer tool-row pill (DSH official slot: 'conversation.input.right', the
-  // seat right beside the model select): switch the default image provider
-  // without leaving the chat. Writes the same 'provider' field as the card.
-  const injectComposerPill = (owner: Context): void => {
-    const ownerRegister = owner.slots.register.bind(owner.slots) as unknown as (options: object, component: unknown) => () => void
-    ;(owner.slots.inject as (key: string, factory: () => () => void) => void)('conversation.input.right', () => ownerRegister({
-      name: 'conversation.input.right',
-      id: 'image-provider',
-      order: 10,
-      inject: (): ProviderPillFace => ({ scope, locale }),
-    }, ImageProviderPill))
-  }
   // Credentials resolve through a mutable holder: hosts expose the service
-  // synchronously (probed now) or later (deferred inject below). The card and
-  // the pill mount unconditionally — a missing service degrades only the key
-  // UI instead of hiding the whole card (issue #32).
+  // synchronously (probed now) or later (deferred inject below). The card
+  // mounts unconditionally — a missing service degrades only the key UI
+  // instead of hiding the whole card (issue #32).
   const credentialsRef: { current: CredentialsRemote | undefined } = {
     current: asCredentialsRemote(ctx.get('remote.credentials')) ?? credentialsFromLegacyConnection(ctx.get('connection')),
   }
@@ -824,7 +808,6 @@ export function apply(ctx: Context): void {
   /** False while the host core exposes no credentials service (preview cores). */
   const credentialsAvailable = (): boolean => credentialsRef.current !== undefined
   injectSettingsItem(ctx)
-  injectComposerPill(ctx)
   // Preview cores can expose the credentials service after this plugin loads:
   // adopt it late and refresh every mounted card through the shared events.
   ctx.inject(['remote.credentials'], (remoteCtx) => {
@@ -971,7 +954,6 @@ interface ImageSettings {
   comfyuiAutoStart?: boolean
   saveToWorkspace?: boolean
   workspaceFolder?: string
-  showProviderPill?: boolean
   /** Chromium path for HTML/SVG rendering; empty auto-detects. */
   renderBrowserPath?: string
   renderDefaultWidth?: number
@@ -999,7 +981,6 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
   const [autoStart, setAutoStart] = useState(false)
   const [saveToWorkspace, setSaveToWorkspace] = useState(true)
   const [workspaceFolder, setWorkspaceFolder] = useState('dsh-arya-image-gen')
-  const [showPill, setShowPill] = useState(false)
   const [browserPath, setBrowserPath] = useState('')
   const [renderWidth, setRenderWidth] = useState('1200')
   const [renderHeight, setRenderHeight] = useState('630')
@@ -1029,7 +1010,6 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     setAutoStart(value?.comfyuiAutoStart === true)
     setSaveToWorkspace(value?.saveToWorkspace !== false)
     setWorkspaceFolder(value?.workspaceFolder ?? 'dsh-arya-image-gen')
-    setShowPill(value?.showProviderPill === true)
     setBrowserPath(value?.renderBrowserPath ?? '')
     setRenderWidth(String(value?.renderDefaultWidth ?? 1200))
     setRenderHeight(String(value?.renderDefaultHeight ?? 630))
@@ -1040,7 +1020,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     setPresets(Object.fromEntries(entries.map(entry => [entry.name, entry.presetPrompt ?? ''])))
     setActiveWorkflow(value?.comfyuiActiveTextWorkflow || (activeComfyUIWorkflow(value ?? {})?.name ?? ''))
     setEditActiveWorkflow(value?.comfyuiActiveEditWorkflow ?? '')
-  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiHeadersJson, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.showProviderPill, value?.comfyuiActiveTextWorkflow, value?.comfyuiActiveEditWorkflow, value?.renderBrowserPath, value?.renderDefaultWidth, value?.renderDefaultHeight, value?.renderBackground, value?.renderSaveSource])
+  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiHeadersJson, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.comfyuiActiveTextWorkflow, value?.comfyuiActiveEditWorkflow, value?.renderBrowserPath, value?.renderDefaultWidth, value?.renderDefaultHeight, value?.renderBackground, value?.renderSaveSource])
 
   // Probe the renderer once when the card opens; a missing browser is a
   // setting to fix, not an error to hide until the first render fails.
@@ -1446,14 +1426,6 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
           <label className="dsh-ig-check-row">
             <input type="checkbox" checked={renderSaveSource} onChange={event => { setRenderSaveSource(event.target.checked); void save('renderSaveSource', event.target.checked) }} disabled={disabled} />
             <span className="dsh-ig-label">Save the .html or .svg source next to each rendered PNG</span>
-          </label>
-        </div>
-
-        <div className="dsh-ig-section">
-          <span className="dsh-ig-section-title">Interface</span>
-          <label className="dsh-ig-check-row">
-            <input type="checkbox" checked={showPill} onChange={event => { setShowPill(event.target.checked); void save('showProviderPill', event.target.checked) }} disabled={disabled} />
-            <span className="dsh-ig-label">Show the workflow switcher beside the chat input</span>
           </label>
         </div>
 

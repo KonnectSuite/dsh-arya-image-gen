@@ -56,4 +56,3 @@ support) are ComfyUI concepts; the render surface is its own tab.
 
 - CDP session for auto-height, element capture and PDF.
 - A theme-token endpoint so templates can pull brand values instead of inlining.
-- A renderer pill in the composer.

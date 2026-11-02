@@ -346,13 +346,12 @@ describe('DSH client compatibility', () => {
     await fiber.await()
 
     expect(fiber.state).toBe(2)
-    // #32 regression guard: the settings card and the composer pill mount even
-    // before any credentials service exists; only the key UI degrades.
+    // #32 regression guard: the settings card mounts even before any
+    // credentials service exists; only the key UI degrades.
     expect(harness.registrations.has('plugins.bundle.config')).toBe(true)
     // Hosts that predate the Plugins tab row only ship the per-plugin seat;
     // the same build must keep the card reachable there.
     expect(harness.registrations.has('settings.plugin.item')).toBe(true)
-    expect(harness.registrations.has('conversation.input.right')).toBe(true)
     expect(() => harness.registrations.get('plugins.bundle.config')?.()).not.toThrow()
     // The legacy per-plugin seat must stay mountable on the very same build.
     expect(() => harness.registrations.get('settings.plugin.item')?.()).not.toThrow()
@@ -385,7 +384,6 @@ describe('DSH client compatibility', () => {
     expect(fiber.state).toBe(2)
     expect(harness.registrations.get('plugins.bundle.config')).toBeTypeOf('function')
     expect(() => harness.registrations.get('plugins.bundle.config')?.()).not.toThrow()
-    expect(harness.registrations.has('conversation.input.right')).toBe(true)
     // The key UI reports the degraded state instead of hiding the card.
     expect(harness.settingsFace()?.credentialsAvailable?.()).toBe(false)
     const degraded = harness.injectedCredentials() as {

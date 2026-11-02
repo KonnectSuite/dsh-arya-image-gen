@@ -86,8 +86,6 @@ export interface Config {
   saveToWorkspace?: boolean
   /** Workspace subfolder for generated images; empty means the workspace root. */
   workspaceFolder?: string
-  /** Show the workflow switcher beside the chat input. */
-  showProviderPill?: boolean
 }
 
 /**
@@ -137,7 +135,6 @@ export const Config = z.object({
   agentPreset: volatile(z.boolean().default(true)),
   saveToWorkspace: volatile(z.boolean().default(true)),
   workspaceFolder: volatile(z.string().default(DEFAULT_WORKSPACE_FOLDER)),
-  showProviderPill: volatile(z.boolean().default(false)),
 }) as unknown as z<Config>
 
 /** Default canvas for a render that does not state its own size. */

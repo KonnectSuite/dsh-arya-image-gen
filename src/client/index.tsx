@@ -72,6 +72,14 @@ import {
   type ConversationImageRevisionChain,
 } from './conversation-image-revisions.js'
 import { conversationRegenerateRequest } from './conversation-regenerate.js'
+import {
+  activeGeneration,
+  beginGeneration,
+  endGeneration,
+  subscribeGeneration,
+  updateGeneration,
+  type GenerationActivity,
+} from './generation-activity.js'
 import { writeSetting } from './settings-write.js'
 
 /** Build timestamp injected by tsdown at bundle time. */
@@ -837,6 +845,20 @@ export function apply(ctx: Context): void {
     inject: (): ImageCardFace => ({ locale, promoted: promotion.enabled }),
   }, GeneratedImageCard))
 
+  // 2b. Generation status above the composer.
+  //
+  // The tool card above is only visible while the host keeps the call expanded;
+  // a running turn folds it into the "calling tools" row and prints its thinking
+  // status underneath, so the progress and its preview disappear exactly when
+  // someone wants to watch them. This dock entry is a list slot outside the
+  // stream, so it renders for as long as a generation is running.
+  ;(ctx.slots.inject as (key: string, factory: () => () => void) => void)('conversation.input.dock', () => register({
+    name: 'conversation.input.dock',
+    id: 'dsh-image-gen-generation',
+    order: 10,
+    inject: (): { locale?: LocaleService | undefined } => ({ locale }),
+  }, GenerationDock))
+
   // 3. Native conversation view tab (DSH official slot: 'conversation.view')
   ;(ctx.slots.inject as any)('conversation.view', () => register({
     name: 'conversation.view',
@@ -1469,12 +1491,28 @@ function LiveGenerationCard(props: ImageCardProps) {
     try { return JSON.parse((props.block as { argsRaw?: string }).argsRaw ?? '{}') as { prompt?: string; workflow?: string } } catch { return {} }
   })()
   const snapshot = useJobSnapshot(props.callId)
+  const prompt = typeof args.prompt === 'string' ? args.prompt : ''
+  const workflow = typeof args.workflow === 'string' ? args.workflow : ''
+  const sessionId = (props as { sessionId?: string }).sessionId
+  // The dock renders the same job outside this card, which the host may fold
+  // into its "calling tools" row: publish here, show there.
+  useEffect(() => {
+    beginGeneration({ callId: props.callId, sessionId, prompt, workflow, startedAt: Date.now() })
+    return () => { endGeneration(props.callId) }
+  }, [props.callId])
+  useEffect(() => {
+    updateGeneration(props.callId, { prompt, workflow, sessionId })
+  }, [props.callId, prompt, workflow, sessionId])
+  useEffect(() => {
+    if (snapshot !== undefined) updateGeneration(props.callId, { snapshot })
+  }, [props.callId, snapshot])
   const percent = snapshot !== undefined && snapshot.max > 0
     ? Math.min(100, Math.round((snapshot.value / snapshot.max) * 100))
     : snapshot?.phase === 'running' ? 100 : 0
   const elapsed = ((snapshot?.elapsedMs ?? 0) / 1000).toFixed(1)
-  const phaseLabel = snapshot?.phase === 'running' ? 'Generating' : 'Queued'
-  const detail = snapshot?.nodeLabel ?? (typeof args.prompt === 'string' && args.prompt.length > 0 ? args.prompt : 'Preparing workflow…')
+  const phaseLabel = snapshot?.phase === 'running' ? 'Generating image' : snapshot?.phase === 'queued' ? 'Queued' : 'Preparing'
+  const detail = snapshot?.nodeLabel ?? (prompt.length > 0 ? prompt : 'Preparing workflow…')
+  const previewable = snapshot !== undefined && snapshot.previewVersion > 0
   return (
     <div className="dsh-ig-progress" role="status" aria-live="polite">
       <div className="dsh-ig-progress-head">
@@ -1485,10 +1523,77 @@ function LiveGenerationCard(props: ImageCardProps) {
         <div className="dsh-ig-progress-fill" style={{ width: `${percent}%` }} />
       </div>
       <span className="dsh-ig-progress-node">{detail}</span>
-      <span className="dsh-ig-hint">{typeof args.workflow === 'string' && args.workflow.length > 0 ? args.workflow : 'Workflow chosen in settings'}</span>
-      {snapshot !== undefined && snapshot.previewVersion > 0 ? (
+      <span className="dsh-ig-hint">{workflow.length > 0 ? workflow : 'Workflow chosen in settings'}</span>
+      {previewable ? (
         <img className="dsh-ig-progress-preview" alt="Live ComfyUI preview" src={`${COMFYUI_PROGRESS_ROUTE}/${snapshot.jobId}/preview?v=${snapshot.previewVersion}`} />
-      ) : null}
+      ) : (
+        <span className="dsh-ig-progress-canvas" aria-hidden="true">
+          <span className="dsh-ig-progress-shimmer" />
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** Subscribe to the newest running generation for one session. */
+function useActiveGeneration(sessionId?: string): GenerationActivity | undefined {
+  const [activity, setActivity] = useState<GenerationActivity | undefined>(() => activeGeneration(sessionId))
+  useEffect(() => {
+    setActivity(activeGeneration(sessionId))
+    return subscribeGeneration(() => { setActivity(activeGeneration(sessionId)) })
+  }, [sessionId])
+  return activity
+}
+
+/**
+ * The "Generating image" panel above the composer.
+ *
+ * Lives in the composer dock rather than in the tool card so it stays visible
+ * while the conversation shows the thinking row and the tool call is folded
+ * away. The thumbnail is the live ComfyUI latent preview; before the first
+ * frame arrives it is an animated canvas, so the panel still reads as work in
+ * progress instead of an empty box.
+ */
+export function GenerationDock(props: { sessionId?: string; locale?: LocaleService }): JSX.Element | null {
+  const activity = useActiveGeneration(props.sessionId)
+  const [, tick] = useState(0)
+  const running = activity !== undefined
+  useEffect(() => {
+    if (!running) return
+    const timer = window.setInterval(() => { tick(value => value + 1) }, 500)
+    return () => { window.clearInterval(timer) }
+  }, [running])
+  if (activity === undefined) return null
+  const snapshot = activity.snapshot
+  const elapsedMs = snapshot !== undefined && snapshot.elapsedMs > 0 ? snapshot.elapsedMs : Date.now() - activity.startedAt
+  const percent = snapshot !== undefined && snapshot.max > 0
+    ? Math.min(100, Math.round((snapshot.value / snapshot.max) * 100))
+    : snapshot?.phase === 'running' ? 100 : 0
+  const jobId = snapshot?.jobId ?? progressJobIdForCall(activity.callId)
+  const previewable = snapshot !== undefined && snapshot.previewVersion > 0
+  const phase = snapshot?.phase === 'queued' ? 'Queued' : snapshot?.phase === 'running' ? 'Generating image' : 'Preparing image'
+  const steps = snapshot !== undefined && snapshot.max > 0 ? `${snapshot.value}/${snapshot.max}` : ''
+  return (
+    <div className="dsh-ig-gen-dock" role="status" aria-live="polite">
+      <div className="dsh-ig-gen-dock-thumb">
+        {previewable
+          ? <img alt="" src={`${COMFYUI_PROGRESS_ROUTE}/${jobId}/preview?v=${snapshot.previewVersion}`} />
+          : <span className="dsh-ig-gen-dock-shimmer" aria-hidden="true" />}
+        {steps.length > 0 ? <span className="dsh-ig-gen-dock-steps">{steps}</span> : null}
+      </div>
+      <div className="dsh-ig-gen-dock-body">
+        <div className="dsh-ig-gen-dock-head">
+          <strong>{phase}</strong>
+          <span>{(elapsedMs / 1000).toFixed(1)}s</span>
+        </div>
+        <div className="dsh-ig-gen-dock-track">
+          <div className="dsh-ig-gen-dock-fill" style={{ width: `${percent}%` }} />
+        </div>
+        <div className="dsh-ig-gen-dock-detail">
+          <span>{snapshot?.nodeLabel ?? activity.prompt}</span>
+          {activity.workflow.length > 0 ? <em>{activity.workflow}</em> : null}
+        </div>
+      </div>
     </div>
   )
 }

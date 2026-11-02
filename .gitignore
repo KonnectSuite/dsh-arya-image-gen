@@ -9,3 +9,6 @@ dev-instance.log
 dev-instance.err.log
 arya-comfyui-workflows.zip
 dsh-arya-image-gen/
+
+# The image-room spec is a working draft, not part of the plugin.
+docs/image-room-spec.md

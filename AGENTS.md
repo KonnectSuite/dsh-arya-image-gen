@@ -2,7 +2,7 @@
 
 AryaCode fork of `shanliuling/dsh-image-gen`, reduced to a single provider: your
 local ComfyUI server. A DeepSeek Harness plugin. `main`. Releases are versioned
-per commit (`v0.19.1` and counting).
+per commit (`v0.19.0` and counting).
 
 ## Commands
 

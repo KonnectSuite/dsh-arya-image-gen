@@ -83,17 +83,17 @@
   <header>
     <div class="brand"><span class="a">Arya</span><span class="c">Code</span></div>
     <h1>Arya Image Gen</h1>
-    <div class="sub">ComfyUI, HTML and SVG image creation for DeepSeek Harness</div>
+    <div class="sub">ComfyUI-native image creation for DeepSeek Harness</div>
     <div class="chips">
       <span class="chip">Chat</span><span class="chip">Canvas</span><span class="chip">Studio</span>
-      <span class="chip">Render</span><span class="chip">Gallery</span>
-      <span class="chip hot">ComfyUI / HTML / SVG</span>
+      <span class="chip">Gallery</span>
+      <span class="chip hot">ComfyUI Workflows</span>
     </div>
   </header>
 
   <div class="steps">
-    <span class="step">describe or author</span><span class="arrow">&#8594;</span>
-    <span class="step on">ComfyUI / HTML / SVG</span><span class="arrow">&#8594;</span>
+    <span class="step">describe</span><span class="arrow">&#8594;</span>
+    <span class="step on">your ComfyUI workflow</span><span class="arrow">&#8594;</span>
     <span class="step">PNG</span><span class="arrow">&#8594;</span>
     <span class="step">chat / canvas / gallery</span>
   </div>
@@ -106,27 +106,27 @@
       <div class="sources">
         <div class="src">
           <div class="bar" style="background:linear-gradient(90deg,#2B6CFF,#4E86FF)"></div>
-          <h3>ComfyUI</h3><div class="kind">Diffusion</div>
+          <h3>Text to image</h3><div class="kind">Diffusion</div>
           <p>Prompt to picture with the workflows you already run.</p>
           <div class="demo"><span class="node" style="background:#2B6CFF">Prompt</span><span class="node" style="background:#00B8B0">Sampler</span><span class="node" style="background:#8A5CFF">VAE</span></div>
         </div>
         <div class="src">
           <div class="bar" style="background:linear-gradient(90deg,#00B8B0,#00E0D2)"></div>
-          <h3>HTML to PNG</h3><div class="kind">Layout</div>
-          <p>Banners, cards and tables with real, exact text.</p>
-          <div class="demo"><span class="aa">Aa</span><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#5C77A0">1200x630</span></div>
+          <h3>Edit &amp; restyle</h3><div class="kind">Image to image</div>
+          <p>Keep the subject's identity and change the scene.</p>
+          <div class="demo"><span class="node" style="background:#00B8B0">Image</span><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#5C77A0">&#8594;</span><span class="node" style="background:#2B6CFF">Sampler</span><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#5C77A0">&#8594;</span><span class="aa">Aa</span></div>
         </div>
         <div class="src">
           <div class="bar" style="background:linear-gradient(90deg,#6B48E8,#8A5CFF)"></div>
-          <h3>SVG to PNG</h3><div class="kind">Vector</div>
-          <p>Icons, logos and diagrams at any scale.</p>
-          <div class="demo"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#8A5CFF" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg></div>
+          <h3>Cutout &amp; remove bg</h3><div class="kind">Alpha</div>
+          <p>A transparent PNG from any photograph.</p>
+          <div class="demo"><span class="node" style="background:#8A5CFF">Photo</span><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#5C77A0">&#8594;</span><span class="node" style="background:#00B8B0">Alpha PNG</span></div>
         </div>
       </div>
       <div class="features">
-        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#2B6CFF,#4E86FF)">G</div><h4>Generate &amp; edit</h4><p>Nine tools, one chat.</p></div>
-        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#00B8B0,#00E0D2)">H</div><h4>Render in chat</h4><p>render_html and render_svg.</p></div>
-        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#6B48E8,#8A5CFF)">S</div><h4>Studio render</h4><p>Template picker and preview.</p></div>
+        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#2B6CFF,#4E86FF)">G</div><h4>Generate &amp; edit</h4><p>Eight tools, one chat.</p></div>
+        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#00B8B0,#00E0D2)">W</div><h4>Workflow picker</h4><p>Five graphs, one picker.</p></div>
+        <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#6B48E8,#8A5CFF)">S</div><h4>Studio workbench</h4><p>Batch, compare, refine.</p></div>
         <div class="feat"><div class="ic" style="background:linear-gradient(150deg,#3B82F6,#2B6CFF)">C</div><h4>Server control</h4><p>Start and stop ComfyUI.</p></div>
       </div>
     </div>
@@ -137,13 +137,13 @@
       <b>Powered by</b>
       <span class="prov"><i></i>ComfyUI Local</span>
       <span class="prov p"><i></i>ComfyUI Remote</span>
-      <span class="prov"><i></i>Chromium</span>
+      <span class="prov"><i></i>Your GPU</span>
     </div>
     <div class="band">
-      <div><h2>Your GPU. Your markup.</h2><p>No cloud, no API keys, no design tool. Rendered by the browser you already have.</p></div>
+      <div><h2>Your GPU. Your pictures.</h2><p>No cloud, no API keys, no design tool. Your ComfyUI, your workflows, your machine.</p></div>
       <div class="facts">
         <div class="fact"><b>Apache-2.0</b><span>open source</span></div>
-        <div class="fact"><b>9 tools</b><span>comfyui + render</span></div>
+        <div class="fact"><b>8 tools</b><span>chat · canvas · studio</span></div>
         <div class="fact"><b>Local-first</b><span>your machine</span></div>
       </div>
     </div>

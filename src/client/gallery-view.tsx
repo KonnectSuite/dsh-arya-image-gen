@@ -23,7 +23,6 @@ import {
   AlertTriangle,
   Sparkles,
   Upload,
-  Code2,
 } from 'lucide-react'
 import {
   getGalleryItems,
@@ -37,7 +36,6 @@ import {
   type GalleryItem,
 } from './gallery-store.js'
 import { StudioView } from './studio-view.js'
-import { RenderView } from './render-view.js'
 import { deselectStudioTlCanvases } from './tl/studio-tl-canvas.js'
 import { GalleryCanvasButton } from './tl/gallery-canvas-button.js'
 import { startGalleryImageDrag } from './tl/gallery-image-transfer.js'
@@ -53,7 +51,7 @@ export interface LocaleService {
   subscribe(fn: () => void): () => void
 }
 
-export type TabKey = 'gallery' | 'studio' | 'render' | 'inspiration' | 'favorites'
+export type TabKey = 'gallery' | 'studio' | 'inspiration' | 'favorites'
 export type SortKey = 'newest' | 'oldest'
 
 const DICT = {
@@ -1287,15 +1285,6 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
 
         <button
           type="button"
-          className={`dsh-ig-studio-tab-btn ${activeTab === 'render' ? 'is-active' : ''}`}
-          onClick={() => setActiveTab('render')}
-        >
-          <Code2 size={15} />
-          <span>Render</span>
-        </button>
-
-        <button
-          type="button"
           className={`dsh-ig-studio-tab-btn ${activeTab === 'inspiration' ? 'is-active' : ''}`}
           onClick={() => setActiveTab('inspiration')}
         >
@@ -1436,7 +1425,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
       )}
 
       {/* 3. Main View Body */}
-      <div className={`dsh-ig-gallery-page-body ${activeTab === 'studio' || activeTab === 'render' ? 'is-workbench' : ''}`}>
+      <div className={`dsh-ig-gallery-page-body ${activeTab === 'studio' ? 'is-workbench' : ''}`}>
         {activeTab === 'gallery' || activeTab === 'favorites' ? (
           items.length === 0 ? (
             <div className="dsh-ig-gallery-empty">
@@ -1486,8 +1475,6 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
               ))}
             </div>
           )
-        ) : activeTab === 'render' ? (
-          <RenderView workspace={activeWorkspace?.path === undefined ? undefined : { path: activeWorkspace.path }} />
         ) : activeTab === 'inspiration' ? (
           <InspirationView locale={locale} onUsePrompt={useInspirationPrompt} onUseReference={useInspirationReference} />
         ) : (

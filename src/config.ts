@@ -18,7 +18,6 @@ import {
   type ComfyUIWorkflowEntry,
   type ComfyUIWorkflowRole,
   type ImageProvider,
-  type RenderDefaults,
 } from './shared.js'
 
 export {
@@ -70,18 +69,6 @@ export interface Config {
   comfyuiLaunchMode?: 'auto' | 'scheduled-task' | 'process'
   /** Task Scheduler task the plugin runs and ends when using the scheduled-task launch. */
   comfyuiScheduledTaskName?: string
-  /** Explicit Chromium path for HTML/SVG rendering; empty means auto-detect. */
-  renderBrowserPath?: string
-  /** Default canvas for a render that does not state its own size. */
-  renderDefaultWidth?: number
-  renderDefaultHeight?: number
-  /** Default device pixel ratio (1-4). */
-  renderScale?: number
-  /** Page background behind rendered markup. */
-  renderBackground?: string
-  renderTimeoutMs?: number
-  /** Keep the .html/.svg source next to the PNG in the workspace. */
-  renderSaveSource?: boolean
   /**
    * Register the Arya Image agent preset: core DSH tools plus this plugin's
    * tools, with the other installed bundles' tools masked out to save context.
@@ -134,56 +121,10 @@ export const Config = z.object({
   comfyuiLaunchMode: volatile(z.union([z.const('auto'), z.const('scheduled-task'), z.const('process')]).default('auto')),
   /** Task Scheduler name to run/end when the launch mode is the scheduled task. */
   comfyuiScheduledTaskName: volatile(z.string().default(DEFAULT_COMFYUI_TASK_NAME)),
-  renderBrowserPath: volatile(z.string().default('')),
-  renderDefaultWidth: volatile(z.number().min(16).max(8192).default(1200)),
-  renderDefaultHeight: volatile(z.number().min(16).max(8192).default(630)),
-  renderScale: volatile(z.number().min(1).max(4).default(1)),
-  renderBackground: volatile(z.string().default('#ffffff')),
-  renderTimeoutMs: volatile(z.number().min(1000).max(120000).default(30000)),
-  renderSaveSource: volatile(z.boolean().default(true)),
   agentPreset: volatile(z.boolean().default(true)),
   saveToWorkspace: volatile(z.boolean().default(true)),
   workspaceFolder: volatile(z.string().default(DEFAULT_WORKSPACE_FOLDER)),
 }) as unknown as z<Config>
-
-/** Default canvas for a render that does not state its own size. */
-export const DEFAULT_RENDER_WIDTH = 1200
-export const DEFAULT_RENDER_HEIGHT = 630
-export const DEFAULT_RENDER_SCALE = 1
-export const DEFAULT_RENDER_BACKGROUND = '#ffffff'
-export const DEFAULT_RENDER_TIMEOUT_MS = 30_000
-
-/**
- * Clamp a configured number into the range the renderer accepts.
- *
- * @param value - configured or undefined value.
- * @param fallback - value used when unset.
- * @param min - lowest accepted value.
- * @param max - highest accepted value.
- * @returns a finite, in-range number.
- */
-function clampNumber(value: number | undefined, fallback: number, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
-  return Math.min(Math.max(value, min), max)
-}
-
-/**
- * Read the render defaults out of the plugin configuration.
- *
- * @param config - current configuration.
- * @returns defaults the tools and the workbench both apply.
- */
-export function resolveRenderDefaults(config: Config): RenderDefaults {
-  return {
-    width: Math.round(clampNumber(config.renderDefaultWidth, DEFAULT_RENDER_WIDTH, 16, 8192)),
-    height: Math.round(clampNumber(config.renderDefaultHeight, DEFAULT_RENDER_HEIGHT, 16, 8192)),
-    scale: clampNumber(config.renderScale, DEFAULT_RENDER_SCALE, 1, 4),
-    background: typeof config.renderBackground === 'string' && config.renderBackground.trim().length > 0
-      ? config.renderBackground.trim()
-      : DEFAULT_RENDER_BACKGROUND,
-    timeoutMs: clampNumber(config.renderTimeoutMs, DEFAULT_RENDER_TIMEOUT_MS, 1_000, 120_000),
-  }
-}
 
 /** Resolve the single (ComfyUI) provider profile for a tool call. */export function resolveProvider(config: Config): {
   provider: 'comfyui'

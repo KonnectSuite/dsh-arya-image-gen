@@ -31,7 +31,6 @@ import {
   IMAGE_GENERATION_ENTRY_ID,
   IMAGE_GENERATION_NAMESPACE,
   IMAGE_ROUTE,
-  RENDER_HEALTH_ROUTE,
   CHECK_WORKFLOWS_ROUTE,
   MAX_COMFYUI_WORKFLOW_BYTES,
   STUDIO_ROUTE,
@@ -979,13 +978,6 @@ interface ImageSettings {
   comfyuiScheduledTaskName?: string
   saveToWorkspace?: boolean
   workspaceFolder?: string
-  /** Chromium path for HTML/SVG rendering; empty auto-detects. */
-  renderBrowserPath?: string
-  renderDefaultWidth?: number
-  renderDefaultHeight?: number
-  renderScale?: number
-  renderBackground?: string
-  renderSaveSource?: boolean
 }
 
 /** Mount the settings card, generated-image card, and native conversation gallery view. */
@@ -1008,12 +1000,6 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
   const [taskName, setTaskName] = useState(DEFAULT_COMFYUI_TASK_NAME)
   const [saveToWorkspace, setSaveToWorkspace] = useState(true)
   const [workspaceFolder, setWorkspaceFolder] = useState('dsh-arya-image-gen')
-  const [browserPath, setBrowserPath] = useState('')
-  const [renderWidth, setRenderWidth] = useState('1200')
-  const [renderHeight, setRenderHeight] = useState('630')
-  const [renderBackground, setRenderBackground] = useState('#ffffff')
-  const [renderSaveSource, setRenderSaveSource] = useState(true)
-  const [renderHealth, setRenderHealth] = useState<{ available: boolean; family?: string; version?: string } | null>(null)
   const [presets, setPresets] = useState<Record<string, string>>({})
   const [activeWorkflow, setActiveWorkflow] = useState('')
   const [editActiveWorkflow, setEditActiveWorkflow] = useState('')
@@ -1039,28 +1025,12 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
     setTaskName(value?.comfyuiScheduledTaskName ?? DEFAULT_COMFYUI_TASK_NAME)
     setSaveToWorkspace(value?.saveToWorkspace !== false)
     setWorkspaceFolder(value?.workspaceFolder ?? 'dsh-arya-image-gen')
-    setBrowserPath(value?.renderBrowserPath ?? '')
-    setRenderWidth(String(value?.renderDefaultWidth ?? 1200))
-    setRenderHeight(String(value?.renderDefaultHeight ?? 630))
-    setRenderBackground(value?.renderBackground ?? '#ffffff')
-    setRenderSaveSource(value?.renderSaveSource !== false)
     const entries = resolveComfyUIWorkflows(value ?? {})
     setWorkflows(entries)
     setPresets(Object.fromEntries(entries.map(entry => [entry.name, entry.presetPrompt ?? ''])))
     setActiveWorkflow(value?.comfyuiActiveTextWorkflow || (activeComfyUIWorkflow(value ?? {})?.name ?? ''))
     setEditActiveWorkflow(value?.comfyuiActiveEditWorkflow ?? '')
-  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiHeadersJson, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.comfyuiActiveTextWorkflow, value?.comfyuiActiveEditWorkflow, value?.renderBrowserPath, value?.renderDefaultWidth, value?.renderDefaultHeight, value?.renderBackground, value?.renderSaveSource])
-
-  // Probe the renderer once when the card opens; a missing browser is a
-  // setting to fix, not an error to hide until the first render fails.
-  useEffect(() => {
-    let cancelled = false
-    void fetch(RENDER_HEALTH_ROUTE, { credentials: 'same-origin' })
-      .then(async response => response.ok ? await response.json() as { available: boolean; family?: string; version?: string } : null)
-      .then(health => { if (!cancelled && health !== null) setRenderHealth(health) })
-      .catch(() => { if (!cancelled) setRenderHealth(null) })
-    return () => { cancelled = true }
-  }, [])
+  }, [value?.comfyuiBaseURL, value?.comfyuiActiveWorkflow, value?.comfyuiWorkflows, value?.comfyuiWorkflowJson, value?.comfyuiTimeoutMs, value?.comfyuiHeadersJson, value?.comfyuiPythonExe, value?.comfyuiServerDir, value?.comfyuiExtraArgs, value?.comfyuiAutoStart, value?.saveToWorkspace, value?.workspaceFolder, value?.comfyuiActiveTextWorkflow, value?.comfyuiActiveEditWorkflow])
 
   /** Persist one field; a failed write rolls the local copy back on the next snapshot. */
   const save = async (field: string, next: unknown): Promise<void> => {
@@ -1437,45 +1407,6 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps): JSX.Eleme
             <span className="dsh-ig-label">Workspace folder</span>
             <input className="dsh-ig-input" value={workspaceFolder} onChange={event => setWorkspaceFolder(event.target.value)} onBlur={() => { const next = workspaceFolder.trim(); if (next !== (value?.workspaceFolder ?? 'dsh-arya-image-gen')) void save('workspaceFolder', next) }} onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} placeholder="dsh-arya-image-gen" disabled={disabled} />
           </label> : null}
-        </div>
-
-        <div className="dsh-ig-section">
-          <span className="dsh-ig-section-title">HTML and SVG rendering</span>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">Chromium path (leave empty to auto-detect Chrome, Edge or Chromium)</span>
-            <input
-              className="dsh-ig-input"
-              value={browserPath}
-              onChange={event => setBrowserPath(event.target.value)}
-              onBlur={() => { const next = browserPath.trim(); if (next !== (value?.renderBrowserPath ?? '')) void save('renderBrowserPath', next) }}
-              onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }}
-              placeholder="Auto-detect"
-              disabled={disabled}
-            />
-          </label>
-          <p className="dsh-ig-status" role="status">
-            {renderHealth === null
-              ? 'Renderer status unknown.'
-              : renderHealth.available
-                ? `Ready: ${(renderHealth.family ?? 'chromium')}${renderHealth.version === undefined ? '' : ` ${renderHealth.version}`}.`
-                : 'No Chromium-family browser found. Install Chrome, Edge or Chromium, then reopen this card.'}
-          </p>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">Default canvas width</span>
-            <input className="dsh-ig-input" value={renderWidth} inputMode="numeric" onChange={event => setRenderWidth(event.target.value)} onBlur={() => { const next = Number(renderWidth); if (Number.isFinite(next) && next !== value?.renderDefaultWidth) void save('renderDefaultWidth', Math.round(next)) }} disabled={disabled} />
-          </label>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">Default canvas height</span>
-            <input className="dsh-ig-input" value={renderHeight} inputMode="numeric" onChange={event => setRenderHeight(event.target.value)} onBlur={() => { const next = Number(renderHeight); if (Number.isFinite(next) && next !== value?.renderDefaultHeight) void save('renderDefaultHeight', Math.round(next)) }} disabled={disabled} />
-          </label>
-          <label className="dsh-ig-field">
-            <span className="dsh-ig-label">Background behind the page</span>
-            <input className="dsh-ig-input" value={renderBackground} onChange={event => setRenderBackground(event.target.value)} onBlur={() => { const next = renderBackground.trim(); if (next !== (value?.renderBackground ?? '#ffffff')) void save('renderBackground', next) }} placeholder="#ffffff" disabled={disabled} />
-          </label>
-          <label className="dsh-ig-check-row">
-            <input type="checkbox" checked={renderSaveSource} onChange={event => { setRenderSaveSource(event.target.checked); void save('renderSaveSource', event.target.checked) }} disabled={disabled} />
-            <span className="dsh-ig-label">Save the .html or .svg source next to each rendered PNG</span>
-          </label>
         </div>
 
         {message.length > 0 ? <p className={`dsh-ig-status${messageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{message}</p> : null}

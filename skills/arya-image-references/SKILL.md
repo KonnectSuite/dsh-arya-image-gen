@@ -21,7 +21,7 @@ run, the specific shade of a brand's green.
 | a public figure's likeness | only a photo the user themselves supplied; never scrape a private person |
 | a fictional character | optional - fan art and official sheets, credit the source |
 | a generic scene, mood or style | no - a description is better and cheaper |
-| exact legible text in the image | no - use `render_html` instead of a diffusion model |
+| exact legible text in the image | no - that is not a reference problem; say so instead of faking it |
 
 ## The loop
 

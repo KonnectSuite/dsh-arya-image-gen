@@ -5,11 +5,11 @@ description: Choose the right ComfyUI workflow in Arya Image Gen instead of inhe
 
 # Choosing a workflow
 
-**ComfyUI is the default route.** Use `generate_image`, `generate_images` and
-`edit_image` for every image request unless the user asks for another route or
-the picture is really a layout job — exact, legible text, tables, a poster whose
-words must be perfect — in which case `render_html` beats a diffusion model. Do
-not reach for HTML or SVG because they feel safer.
+**ComfyUI is the only route.** Use `generate_image`, `generate_images` and
+`edit_image` for every image request. The plugin has no HTML or SVG rasterizer:
+when a request is really a layout job — exact, legible text, tables, a poster
+whose words must be perfect — say plainly that a diffusion model cannot
+guarantee lettering, and describe the workflow's limit instead of drifting.
 
 If a ComfyUI call fails with a connection error, the server is down or
 unreachable: say so and offer to start it (Settings → Plugins → Arya Image Gen →

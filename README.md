@@ -58,7 +58,7 @@ DSH ships no official plugin market, so the AryaCode market is a plugin index yo
 
 ## Workflows
 
-ComfyUI workflows are the "models" of this plugin. A fresh install already arrives with the four shipped workflows configured (text-to-image with adjustable size, cutout, edit, background removal), so there is nothing to import before the first image. Each imported JSON becomes a selectable option in the Studio model picker, the comparison view, and the chat tools.
+ComfyUI workflows are the "models" of this plugin. A fresh install already arrives with the five shipped workflows configured (compose from any number of references, text-to-image with adjustable size, cutout, edit, background removal), so there is nothing to import before the first image. Each imported JSON becomes a selectable option in the Studio model picker, the comparison view, and the chat tools.
 
 Workflows are grouped by role: **Text to image** and **Image to image**, detected from the JSON and overridable per workflow. Each group remembers its own active workflow, so `edit_image` uses the edit graph without you switching anything.
 
@@ -70,7 +70,7 @@ Workflows are grouped by role: **Text to image** and **Image to image**, detecte
 
 Export from ComfyUI with **Save (API Format)**. UI-format workflows are not supported.
 
-Four ready-made API workflows ship with the plugin — Qwen Image 2.1 create (with adjustable size), cutout, edit and background removal — in [`docs/workflows/`](docs/workflows/) or as [`arya-qwen-image-pack.zip`](docs/workflows/arya-qwen-image-pack.zip). Import them as-is.
+Five ready-made API workflows ship with the plugin — Qwen Image 2.1 compose (any number of references), create (with adjustable size), cutout, edit and background removal — in [`docs/workflows/`](docs/workflows/); the first four are also in [`arya-qwen-image-pack.zip`](docs/workflows/arya-qwen-image-pack.zip). Import them as-is.
 
 **Check against ComfyUI** in the Workflows card pre-flights every configured workflow against the running server and reports missing node packs or model files by name.
 
@@ -129,8 +129,6 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 
 - **Chat generation**: `generate_image`, `generate_images`, and `edit_image` tools with automatic workspace saving.
 - **Reference images from the web**: when a request names something real, the agent finds the actual photograph, imports it with `import_reference_image`, and edits from it instead of guessing at the details.
-- **HTML to PNG**: `render_html` renders pixel-exact banners, cards, tables and infographics with the installed browser; six brand templates included.
-- **SVG to PNG**: `render_svg` rasterizes icons, logos, diagrams and charts at any scale.
 - **AI creative canvas**: a tldraw infinite canvas where sketches, text, and pasted images become model-readable context; selections can be edited directly.
 - **Studio workbench**: prompt, workflow picker, reference uploads, batch counts, and a recent-generation rail.
 - **Workflow comparison**: run one prompt across two or more imported workflows.
@@ -145,7 +143,7 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 
 This bundle also registers an agent preset, **Arya Image**, for sessions whose only job is making images. Pick it in the preset picker when you start a session.
 
-- Keeps the working set an image session needs: the eleven image tools, `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), `read_image`, the job tools, `web_search` and `web_fetch`, `ask_user_question`, and `present`.
+- Keeps the working set an image session needs: the eight image tools, `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), `read_image`, the job tools, `web_search` and `web_fetch`, `ask_user_question`, and `present`.
 - Declares those as its own rows, the way the shipped presets do, so the session has exactly this set and nothing from the Engineering bundle, MCP servers, computer use, skills, subagents or goals.
 
 Set `agentPreset: false` in the plugin configuration to stop the preset from being registered.
@@ -167,27 +165,6 @@ edit_image(source_path="…/references/eiffel-tower.png",
 ```
 
 Full workflow, source quality rules, limits and the honesty rules: [docs/reference-images.md](docs/reference-images.md). The same guidance ships as the `arya-image-references` skill, and a condensed version sits in the **Arya Image** preset's persona so it works without the skill tool.
-
-## Rendering HTML and SVG
-
-Two more sources beside ComfyUI. Both rasterize with a Chromium-family browser you already have (Chrome, Edge or Chromium) and land in the same attachment, workspace and gallery path as a generated image.
-
-- `render_html` — templates or hand-written HTML. Six brand templates ship in the box: Open Graph card, square post, wide banner, feature grid, stat card, comparison table. Real text, real layout, no design tool.
-- `render_svg` — icons, logos, diagrams and charts, scalable to any output size.
-- `list_render_templates` — the template ids and slot names.
-
-**Studio → Render** gives the same thing a workbench: pick a template or paste markup, fill the slots, render, and keep the results in the rail.
-
-<p align="center">
-  <img src="docs/assets/render/og-card.png" alt="Open Graph card rendered from an HTML template" width="49%" />
-  <img src="docs/assets/render/banner.png" alt="Wide banner rendered from an HTML template" width="49%" />
-</p>
-
-Limits are deliberate: no JavaScript runs, no network is reachable, and the canvas is fixed (there is no auto-height). The renderer also strips scripts, event handlers and remote URLs before anything is loaded. Sora and JetBrains Mono ship with the plugin so rendered text matches the rest of AryaCode.
-
-Full guide, template gallery, examples and troubleshooting: [docs/rendering.md](docs/rendering.md).
-
-Set the browser path, default canvas size and background in **Settings → Plugins → Arya Image Gen → HTML and SVG rendering**; the card also reports whether a browser was found.
 
 ## Requirements
 

@@ -15,7 +15,7 @@ import { editComfyUIImage, generateComfyUIImage, type ComfyUIJobTimings } from '
 import { IMAGE_ROUTE, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, imageAttachmentFromMeta, serveImage, serveDelete, serveSaveWorkspace } from './image-route.js'
 import { serveImport } from './import-route.js'
 import { type ResolvedReferenceImage, resolveReferenceImages } from './reference-image.js'
-import { CANVAS_STATE_ROUTE, CHECK_WORKFLOWS_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, RENDER_HEALTH_ROUTE, RENDER_ROUTE, STUDIO_ROUTE, describeWorkflowCatalog, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, resolveComfyUIWorkflows, type ComfyUIGenerationParams, type ComfyUIServerStatus } from './shared.js'
+import { CANVAS_STATE_ROUTE, CHECK_WORKFLOWS_ROUTE, IMAGE_GENERATION_NAMESPACE, IMAGE_TOOL_NAMES, IMPORT_ROUTE, INSPIRATION_ROUTE, STUDIO_ROUTE, describeWorkflowCatalog, isLocalComfyUIEndpoint, mergeComfyUIPrompt, progressJobIdForCall, resolveComfyUIWorkflows, type ComfyUIGenerationParams, type ComfyUIServerStatus } from './shared.js'
 import { createInspirationRoute } from './inspiration-route.js'
 import { BUNDLED_INSPIRATION_CATALOG, searchInspirationCases } from './inspiration.js'
 import { describeStudio, generateFromStudio } from './studio.js'
@@ -28,10 +28,6 @@ import { SETTINGS_HEALTH_ROUTE, type SettingsHealth } from './shared.js'
 import { deleteImageFromWorkspace, getDshWorkspaceRoots, getDshWorkspacesFull, saveImageToWorkspace } from './workspace-save.js'
 import { imageToolContext } from './image-tool-context.js'
 import { attachmentMeta, saveGenerated, type GeneratedValue } from './save-generated.js'
-import { registerRenderTools } from './render-tools.js'
-import { RENDER_LIMITS } from './render/render.js'
-import { describeRenderer, renderFromStudio, rendererHealth } from './render-service.js'
-import { serveRender } from './render-route.js'
 import { checkWorkflowsAgainstInstall } from './validate-workflows.js'
 import { mountAgentPreset } from './agent-preset/register.js'
 import { importReferenceImage, type ImportedReference } from './reference-import.js'
@@ -214,27 +210,6 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
     }), 'dsh-image-gen: workflow check route')
     webCtx.effect(() => webCtx.webServer.register({
-      kind: 'exact', path: RENDER_HEALTH_ROUTE,
-      handler: async (req, res) => {
-        try {
-          const health = await rendererHealth(current())
-          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-          res.end(JSON.stringify(health))
-        } catch (error) {
-          res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
-          res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'render-health-failed' }))
-        }
-      },
-    }), 'dsh-image-gen: render health route')
-    webCtx.effect(() => webCtx.webServer.register({
-      kind: 'exact', path: RENDER_ROUTE,
-      handler: (req, res) => serveRender(req, res, {
-        describe: () => describeRenderer(current()),
-        render: (input, signal) => renderFromStudio(ctx, current(), input, signal, knownWorkspaceRoots),
-        maxBodyBytes: Math.ceil(RENDER_LIMITS.maxMarkupBytes * 1.2),
-      }),
-    }), 'dsh-image-gen: render route')
-    webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact', path: CANVAS_STATE_ROUTE,
       handler: (req, res) => serveCanvasState(req, res, {
         mirror: canvasMirror,
@@ -266,9 +241,6 @@ export function apply(ctx: Context, config: Config = {}): void {
       text: () => canvasMirror.digest(),
     }), 'dsh-image-gen: canvas context')
   })
-  // HTML and SVG rendering: same attachment path as a generated image, with a
-  // browser instead of a diffusion workflow behind it.
-  registerRenderTools(ctx, { config: current, knownRoots: knownWorkspaceRoots })
   registerCanvasTools(ctx, canvasMirror, {
     // Materialization hook: view_canvas persists a screenshot only when the
     // model actually views it. The content-addressed store dedupes repeat

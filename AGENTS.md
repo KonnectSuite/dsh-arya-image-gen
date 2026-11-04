@@ -2,13 +2,13 @@
 
 AryaCode fork of `shanliuling/dsh-image-gen`, reduced to a single provider: your
 local ComfyUI server. A DeepSeek Harness plugin. `main`. Releases are versioned
-per commit (`v0.18.13` and counting).
+per commit (`v0.19.0` and counting).
 
 ## Commands
 
     pnpm install
     pnpm run typecheck      # tsc --noEmit
-    pnpm test               # vitest run (38 specs under tests/)
+    pnpm test               # vitest run (36 specs under tests/)
     pnpm run build          # sync workflows -> tsc -> tsdown
     pnpm run pack:check     # pnpm pack --dry-run
     pnpm run test:package   # node scripts/check-package.mjs
@@ -38,6 +38,11 @@ test:package on ubuntu and windows, node 24, pnpm 11.7.0. The engine floor in
    notes live under `docs/releases/`.
 6. `banner-build/` is untracked scratch (`_preview.png`, `banner.html`,
    `compose_banner.py`). Do not commit it unless it is deliberately adopted.
+7. **No HTML/SVG renderer.** `render_html`, `render_svg`,
+   `list_render_templates`, the render route, the Chromium driver and the Studio
+   Render tab were removed on purpose (v0.19.0): a model with its own HTML and
+   SVG ability reached for them and drifted, and a rasterized page proved
+   nothing. Do not reintroduce them, and do not ship a browser dependency.
 
 ## Known rough edges
 

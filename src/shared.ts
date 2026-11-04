@@ -35,75 +35,8 @@ export interface SettingsHealth {
 export const CANVAS_STATE_ROUTE = '/plugins/dsh-image-gen/canvas-state'
 /** Upload a selected canvas original to the host attachment store. */
 export const CANVAS_ASSET_ROUTE = '/plugins/dsh-image-gen/canvas-asset'
-/** Same-origin route for HTML/SVG rendering from the workbench. */
-export const RENDER_ROUTE = '/plugins/dsh-image-gen/render'
-/** Renderer capability probe, safe before any render runs. */
-export const RENDER_HEALTH_ROUTE = '/plugins/dsh-image-gen/render-health'
 /** Pre-flight the configured workflows against the running ComfyUI. */
 export const CHECK_WORKFLOWS_ROUTE = '/plugins/dsh-image-gen/check-workflows'
-
-/** One template the workbench and the model can render. */
-export interface RenderTemplateInfo {
-  id: string
-  label: string
-  description: string
-  width: number
-  height: number
-  slots: readonly string[]
-}
-
-/** Default geometry applied to a render that omits it. */
-export interface RenderDefaults {
-  width: number
-  height: number
-  scale: number
-  background: string
-  timeoutMs: number
-}
-
-/** Whether a usable browser exists, without starting one. */
-export interface RenderHealth {
-  available: boolean
-  path?: string
-  family?: string
-  version?: string
-}
-
-/** Workbench renderer state: capability, defaults and the template catalog. */
-export interface RenderConfigResponse {
-  health: RenderHealth
-  defaults: RenderDefaults
-  templates: RenderTemplateInfo[]
-}
-
-/** One validated workbench render request. */
-export interface StudioRenderRequest {
-  kind: 'html' | 'svg'
-  markup?: string
-  template?: string
-  data?: Record<string, string>
-  width?: number
-  height?: number
-  scale?: number
-  background?: string
-  workspaceRoot?: string
-}
-
-/** One finished workbench render, in the shape the rail and gallery expect. */
-export interface StudioRenderResponse {
-  attachment: ImageAttachmentRef
-  provider: 'html' | 'svg'
-  model: string
-  output: string
-  savedTo?: string
-  saveError?: string
-  sourceSavedTo?: string
-  width: number
-  height: number
-  elapsedMs: number
-  createdAt: number
-  prompt: string
-}
 
 /**
  * Model-facing tool names this Bundle registers.
@@ -118,9 +51,6 @@ export const IMAGE_TOOL_NAMES = {
   editImage: 'edit_image',
   findInspiration: 'find_inspiration',
   importReference: 'import_reference_image',
-  renderHtml: 'render_html',
-  renderSvg: 'render_svg',
-  listRenderTemplates: 'list_render_templates',
   listWorkflows: 'list_workflows',
   canvasState: 'canvas_state',
   viewCanvas: 'view_canvas',
@@ -240,8 +170,8 @@ export const IMAGE_GENERATION_NAMESPACE = 'image-generation'
  */
 export const IMAGE_GENERATION_ENTRY_ID = 'image-gen'
 
-/** Supported providers: diffusion through ComfyUI, or rasterized markup. */
-export const IMAGE_PROVIDERS = ['comfyui', 'html', 'svg'] as const
+/** The only provider: diffusion through ComfyUI. */
+export const IMAGE_PROVIDERS = ['comfyui'] as const
 export type ImageProvider = typeof IMAGE_PROVIDERS[number]
 
 /** Providers the browser workbench drives as workflows: ComfyUI only. */
@@ -256,8 +186,6 @@ export function isStudioProvider(provider: ImageProvider): provider is StudioPro
 /** Display name per provider, for status lines and provenance. */
 export const PROVIDER_DISPLAY_NAMES: Record<ImageProvider, string> = {
   comfyui: 'ComfyUI',
-  html: 'HTML',
-  svg: 'SVG',
 }
 
 /** One selectable option exposed by a provider profile. */
@@ -789,16 +717,4 @@ export interface ComfyUIServerStatus {
   taskState?: string
   /** Why the launch path resolved the way it did, for the card to show. */
   launchHint: string
-}
-
-export const DEFAULT_MODELS: Record<ImageProvider, string> = {
-  comfyui: DEFAULT_COMFYUI_WORKFLOW_LABEL,
-  html: 'HTML',
-  svg: 'SVG',
-}
-
-export const DEFAULT_BASE_URLS: Record<ImageProvider, string> = {
-  comfyui: DEFAULT_COMFYUI_BASE_URL,
-  html: '',
-  svg: '',
 }

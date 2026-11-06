@@ -1,28 +1,34 @@
 /**
  * The Arya Image agent preset as data.
  *
- * Why this exists: a DSH agent inherits whatever its preset mounts, and each
+ * Why this exists: a DSH agent inherits whatever its preset mounts, and every
  * tool schema is paid for on every request. An image session needs the image
- * tools and the full DSH standard tool set - filesystem, shell, jobs, web,
- * scheduling, skills, goals, plan mode, compaction, delegation and the rest -
- * while tools from other installed bundles stay out of the prompt.
+ * tools and a small working set - filesystem, shell, jobs, web, ask, present -
+ * and nothing else. Goals, skills, plan mode, delegation, scheduling, MCP
+ * servers and computer use stay out of the prompt.
  *
- * The row list is the mechanism, the same way the AryaCode presets work: a
- * preset declares the plugins it runs, and those rows are the session's tools.
- * Masking inherited tools is NOT a substitute - a mask can only name what the
- * host registers globally, so a session built on inherited tools ends up with
- * whatever happened to be global and none of the base tools.
+ * Two mechanisms, because neither one is enough alone:
+ *
+ * - **Rows** mount the tools the session must have. A tool registered by one of
+ *   the preset's own rows lives in the agent's scope and is always visible.
+ * - **The mask row** (`dsh-arya-image-gen/agent-toolset`) calls
+ *   `ctx.tools.restrict({ allow })`, which hides every *inherited global* tool
+ *   the list does not name. Rows alone cannot do that: the host's composition
+ *   registers tools globally - other bundles, MCP servers, computer use - and
+ *   every one of them would otherwise reach this session.
  *
  * The image tools are not rows: they come from this bundle's host row and are
- * already global, so a preset that mounts rows and masks nothing keeps them.
+ * already global, so the allow list names them explicitly. A name that the
+ * scope cannot restrict (because a row provides it) is dropped from the filter
+ * by the mask itself, and the tool stays visible either way.
  *
  * Shell rows use `disabled` rather than a platform switch, matching the shipped
  * presets, so a definition is one shape on every platform.
  *
  * @module dsh-arya-image-gen/agent-preset/definition
  */
+import { IMAGE_TOOL_NAME_LIST } from '../shared.js'
 import { ARYA_IMAGE_PERSONA } from './persona.js'
-import { ARYA_IMAGE_PLAN_SECTION } from './plan-section.js'
 
 /** The preset id sessions record in their header. */
 export const ARYA_IMAGE_PRESET_ID = 'arya-image'
@@ -31,10 +37,16 @@ export const ARYA_IMAGE_PRESET_ID = 'arya-image'
 export const ARYA_IMAGE_PRESET_NAME = 'Arya Image'
 
 /** One line under the name in the picker. */
-export const ARYA_IMAGE_PRESET_DESCRIPTION = 'Image work with the image tools and the full DSH tool set; other installed bundles\' tools stay out of the prompt.'
+export const ARYA_IMAGE_PRESET_DESCRIPTION = 'Image work with the image tools and a small core tool set; everything else stays out of the prompt.'
 
 /** Sort position right after Arya Standard (2), where the image work belongs. */
 export const ARYA_IMAGE_PRESET_ORDER = 2.5
+
+/** Row id of the tool-mask row inside the preset. */
+export const ARYA_IMAGE_TOOLSET_ROW_ID = 'arya-image-toolset'
+
+/** Package subpath the tool-mask row mounts. */
+export const ARYA_IMAGE_TOOLSET_MODULE = 'dsh-arya-image-gen/agent-toolset'
 
 /** One plugin row in a preset definition. */
 export interface PresetRow {
@@ -58,24 +70,59 @@ export interface AgentPresetDefinition {
 }
 
 /**
- * The rows that give the session its tools.
+ * The host tools an image session keeps beside the image tools.
  *
- * Exactly the shipped DSH standard preset's row list, minus the AryaCode
- * `arya-review-skills` row this preset has no use for. The baseline is
- * `AryaCode/packages/bundle/web-app/presets/standard.patch.yml` at the DSH
- * version this plugin targets; only the persona text differs. The planning
- * group passes the shipped plan-mode section, which the plugin requires at load.
- * With `standDownCompaction`, the compaction group's two summary children are
- * the only rows disabled; the pruner and every other row stay as they are.
+ * `working_directory` is absent from the preset's rows: the host mounts it
+ * globally, so the mask is what keeps it.
  *
  * @param platform - `process.platform` value of the host.
- * @param profileContext - whether the Host exposes its profile service; enables
- *   the same conditional plugin-manager row the shipped standard preset mounts.
+ * @returns the global tool names the mask keeps.
+ */
+export function coreToolNames(platform: string): readonly string[] {
+  return [
+    'read',
+    'write',
+    'edit',
+    'glob',
+    'grep',
+    'read_image',
+    'working_directory',
+    platform === 'win32' ? 'pwsh' : 'bash',
+    'job_list',
+    'job_output',
+    'job_kill',
+    'web_search',
+    'web_fetch',
+    'ask_user_question',
+    'present',
+  ]
+}
+
+/**
+ * The allow list handed to the mask row: the image tools plus the core set.
+ *
+ * @param platform - `process.platform` value of the host.
+ * @returns the global tool names the mask keeps.
+ */
+export function agentPresetAllowList(platform: string): string[] {
+  return [...IMAGE_TOOL_NAME_LIST, ...coreToolNames(platform)]
+}
+
+/**
+ * The rows that give the session its tools.
+ *
+ * The working set is deliberately small: an image session that also carries
+ * goals, skills, plan mode, delegation, scheduling and a todo list spends
+ * prompt budget and decision space on tools it will not use. The compaction
+ * group stays - it mounts no tools, and it keeps the session's summarization
+ * and the billion-context stand-down working.
+ *
+ * @param platform - `process.platform` value of the host.
  * @param standDownCompaction - whether billion-context owns compaction, so the
  *   stock summary rows must not run beside it.
  * @returns the rows, in mount order.
  */
-export function presetToolRows(platform: string, profileContext = false, standDownCompaction = false): PresetRow[] {
+export function presetToolRows(platform: string, standDownCompaction = false): PresetRow[] {
   const windows = platform === 'win32'
   return [
     { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
@@ -87,21 +134,6 @@ export function presetToolRows(platform: string, profileContext = false, standDo
     { id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs' },
     { id: 'tool-fs-search', name: '@deepseek-ai/dsh-tool-fs-search', config: { sampleOverCapGlobResults: false } },
     { id: 'tool-jobs', name: '@deepseek-ai/dsh-tool-jobs' },
-    { id: 'tool-schedule', name: '@deepseek-ai/dsh-tool-schedule' },
-    { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem' },
-    { id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
-    { id: 'command-goal', name: '@deepseek-ai/dsh-command-goal' },
-    { id: 'tool-goal', name: '@deepseek-ai/dsh-tool-goal' },
-    {
-      id: 'planning',
-      name: 'cordis:group',
-      group: true,
-      isolate: { planMode: true },
-      // plan-mode validates its config at load and rejects a missing section.
-      config: [
-        { id: 'plan-mode', name: '@deepseek-ai/dsh-plan-mode', config: { section: ARYA_IMAGE_PLAN_SECTION } },
-      ],
-    },
     {
       id: 'compaction',
       name: 'cordis:group',
@@ -127,36 +159,16 @@ export function presetToolRows(platform: string, profileContext = false, standDo
         },
       ],
     },
-    {
-      id: 'delegation',
-      name: 'cordis:group',
-      group: true,
-      isolate: { workflowEngine: true },
-      config: [
-        { id: 'tool-subagent-control', name: '@deepseek-ai/dsh-tool-subagent-control' },
-        {
-          id: 'tool-subagent',
-          name: '@deepseek-ai/dsh-tool-subagent',
-          config: { provider: 'spawn', toolName: 'subagent', modelSelection: true, modelDiscovery: true },
-        },
-        {
-          id: 'tool-subagent-fork',
-          name: '@deepseek-ai/dsh-tool-subagent',
-          config: { provider: 'fork', toolName: 'subagent_fork' },
-        },
-        { id: 'workflow-ptc', name: '@deepseek-ai/dsh-workflow-ptc', config: { provider: 'spawn' } },
-        { id: 'tool-workflow', name: '@deepseek-ai/dsh-tool-workflow' },
-      ],
-    },
     { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
-    { id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', config: { allowParallelInProgress: true } },
     // Search + fetch: how a real subject's photograph is found before an edit.
     { id: 'tool-web', name: '@deepseek-ai/dsh-tool-web', config: { fetch: true, searchTimeoutMs: 60_000 } },
     { id: 'present', name: '@deepseek-ai/dsh-tool-present' },
-    // Host plumbing, matching the shipped standard rows: the manager exists
-    // only where the Host exposes profileContext; the market is opt-in.
-    { id: 'tool-plugin-manager', name: '@deepseek-ai/dsh-plugin-manager/tools', disabled: !profileContext },
-    { id: 'tool-plugin-market', name: '@deepseek-ai/dsh-plugin-market/tools', disabled: true },
+    // Last: it can only name tools that are already registered when it runs.
+    {
+      id: ARYA_IMAGE_TOOLSET_ROW_ID,
+      name: ARYA_IMAGE_TOOLSET_MODULE,
+      config: { allow: agentPresetAllowList(platform) },
+    },
   ]
 }
 
@@ -165,13 +177,11 @@ export function presetToolRows(platform: string, profileContext = false, standDo
  *
  * @param options - host facts the definition depends on.
  * @param options.platform - `process.platform` value of the host.
- * @param options.profileContext - whether the Host exposes its profile service.
  * @param options.standDownCompaction - whether billion-context owns compaction.
  * @returns a definition `agentPresets.register()` accepts.
  */
 export function buildAgentPresetDefinition(options: {
   platform: string
-  profileContext?: boolean
   standDownCompaction?: boolean
 }): AgentPresetDefinition {
   return {
@@ -189,7 +199,7 @@ export function buildAgentPresetDefinition(options: {
           includeRuntimeContext: true,
         },
       },
-      ...presetToolRows(options.platform, options.profileContext === true, options.standDownCompaction === true),
+      ...presetToolRows(options.platform, options.standDownCompaction === true),
     ],
   }
 }

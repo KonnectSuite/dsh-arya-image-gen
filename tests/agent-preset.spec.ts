@@ -3,6 +3,9 @@ import {
   ARYA_IMAGE_PRESET_ID,
   ARYA_IMAGE_PRESET_NAME,
   ARYA_IMAGE_PRESET_ORDER,
+  ARYA_IMAGE_TOOLSET_MODULE,
+  ARYA_IMAGE_TOOLSET_ROW_ID,
+  agentPresetAllowList,
   buildAgentPresetDefinition,
   presetToolRows,
 } from '../src/agent-preset/definition.js'
@@ -18,19 +21,18 @@ import {
   isBiliVerdictActive,
   resolveStandDown,
 } from '../src/agent-preset/billion-context.js'
-import { ARYA_IMAGE_PLAN_SECTION } from '../src/agent-preset/plan-section.js'
 import { apply as applyToolset } from '../src/agent-preset/toolset.js'
 import { mountAgentPreset } from '../src/agent-preset/register.js'
 import { IMAGE_TOOL_NAME_LIST } from '../src/shared.js'
 
 /**
- * The ordered top-level rows the shipped DSH standard preset mounts, from
- * `AryaCode/packages/bundle/web-app/presets/standard.patch.yml` at the DSH
- * version this plugin targets. Arya Image is that list minus the AryaCode
- * `arya-review-skills` lens row. The baseline is a different repository, so the
- * expectation is copied here rather than read at test time.
+ * The ordered top-level rows the preset mounts: a small core working set, the
+ * compaction group and the tool mask. Goals, skills, plan mode, delegation,
+ * scheduling, todo, the plugin manager and the plugin market are deliberately
+ * absent - an image session does not use them, and every row costs prompt
+ * budget.
  */
-const BASELINE_ROW_IDS = [
+const CORE_ROW_IDS = [
   'persona',
   'agent-instructions',
   'time-context',
@@ -39,24 +41,15 @@ const BASELINE_ROW_IDS = [
   'tool-fs',
   'tool-fs-search',
   'tool-jobs',
-  'tool-schedule',
-  'skill-filesystem',
-  'tool-skill',
-  'command-goal',
-  'tool-goal',
-  'planning',
   'compaction',
-  'delegation',
   'tool-ask-user',
-  'tool-todo',
   'tool-web',
   'present',
-  'tool-plugin-manager',
-  'tool-plugin-market',
+  'arya-image-toolset',
 ]
 
-/** The module each shipped row mounts, keyed by row id. */
-const BASELINE_MODULES: Record<string, string> = {
+/** The module each row mounts, keyed by row id. */
+const CORE_MODULES: Record<string, string> = {
   'persona': '@deepseek-ai/dsh-persona',
   'agent-instructions': '@deepseek-ai/dsh-agent-instructions',
   'time-context': '@deepseek-ai/dsh-time-context',
@@ -65,20 +58,11 @@ const BASELINE_MODULES: Record<string, string> = {
   'tool-fs': '@deepseek-ai/dsh-tool-fs',
   'tool-fs-search': '@deepseek-ai/dsh-tool-fs-search',
   'tool-jobs': '@deepseek-ai/dsh-tool-jobs',
-  'tool-schedule': '@deepseek-ai/dsh-tool-schedule',
-  'skill-filesystem': '@deepseek-ai/dsh-skill-filesystem',
-  'tool-skill': '@deepseek-ai/dsh-tool-skill',
-  'command-goal': '@deepseek-ai/dsh-command-goal',
-  'tool-goal': '@deepseek-ai/dsh-tool-goal',
-  'planning': 'cordis:group',
   'compaction': 'cordis:group',
-  'delegation': 'cordis:group',
   'tool-ask-user': '@deepseek-ai/dsh-tool-ask-user',
-  'tool-todo': '@deepseek-ai/dsh-tool-todo',
   'tool-web': '@deepseek-ai/dsh-tool-web',
   'present': '@deepseek-ai/dsh-tool-present',
-  'tool-plugin-manager': '@deepseek-ai/dsh-plugin-manager/tools',
-  'tool-plugin-market': '@deepseek-ai/dsh-plugin-market/tools',
+  'arya-image-toolset': 'dsh-arya-image-gen/agent-toolset',
 }
 
 /** Child rows of a `cordis:group` row, read through the row's untyped config. */
@@ -97,35 +81,37 @@ describe('arya-image preset definition', () => {
     expect(definition.description.length).toBeGreaterThan(0)
   })
 
-  it('mounts the shipped standard rows in the shipped order', () => {
+  it('mounts the core rows in order and nothing else', () => {
     const definition = buildAgentPresetDefinition({ platform: 'win32' })
-    expect(definition.plugins.map(row => row.id)).toEqual(BASELINE_ROW_IDS)
-    expect(definition.plugins).toHaveLength(BASELINE_ROW_IDS.length)
+    expect(definition.plugins.map(row => row.id)).toEqual(CORE_ROW_IDS)
+    expect(definition.plugins).toHaveLength(CORE_ROW_IDS.length)
   })
 
-  it('mounts every shipped module under its shipped row id', () => {
+  it('mounts every core module under its row id', () => {
     const definition = buildAgentPresetDefinition({ platform: 'win32' })
-    expect(Object.fromEntries(definition.plugins.map(row => [row.id, row.name]))).toEqual(BASELINE_MODULES)
+    expect(Object.fromEntries(definition.plugins.map(row => [row.id, row.name]))).toEqual(CORE_MODULES)
+  })
+
+  it('leaves the goal, skill, plan, delegation, schedule, todo and plugin rows unset', () => {
+    const ids = new Set(presetToolRows('win32').map(row => row.id))
+    for (const id of [
+      'tool-schedule', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
+      'planning', 'delegation', 'tool-todo', 'tool-plugin-manager', 'tool-plugin-market',
+    ]) {
+      expect(ids.has(id)).toBe(false)
+    }
+  })
+
+  it('keeps every top-level row a real plugin or group', () => {
+    for (const row of presetToolRows('win32')) {
+      expect(row.name.length).toBeGreaterThan(0)
+      expect(row.id.length).toBeGreaterThan(0)
+    }
   })
 
   it('gives every top-level row a unique id', () => {
     const ids = presetToolRows('win32').map(row => row.id)
     expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('mounts the planning group with a non-empty shipped plan-mode section', () => {
-    // A missing or empty section is a load failure for the whole preset:
-    // `PlanModeConfig needs a string `section``.
-    const planning = presetToolRows('win32').find(row => row.id === 'planning')
-    expect(planning?.name).toBe('cordis:group')
-    expect(planning?.isolate).toEqual({ planMode: true })
-    const children = childrenOf(planning)
-    expect(children.map(child => child.id)).toEqual(['plan-mode'])
-    expect(children[0]?.name).toBe('@deepseek-ai/dsh-plan-mode')
-    const section = (children[0]?.config as { section?: unknown } | undefined)?.section
-    expect(typeof section).toBe('string')
-    expect((section as string).trim().length).toBeGreaterThan(0)
-    expect(section).toBe(ARYA_IMAGE_PLAN_SECTION)
   })
 
   it('keeps the harness default compaction group', () => {
@@ -143,7 +129,7 @@ describe('arya-image preset definition', () => {
   })
 
   it('stands the two summary rows down when billion-context owns compaction', () => {
-    const compaction = presetToolRows('win32', false, true).find(row => row.id === 'compaction')
+    const compaction = presetToolRows('win32', true).find(row => row.id === 'compaction')
     expect(childrenOf(compaction)).toEqual([
       { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic', disabled: true },
       { id: 'command-compact', name: '@deepseek-ai/dsh-command-compact', disabled: true },
@@ -156,8 +142,8 @@ describe('arya-image preset definition', () => {
   })
 
   it('changes nothing outside the two summary rows when standing down', () => {
-    const standing = presetToolRows('win32', false, true)
-    const defaultRows = presetToolRows('win32', false, false)
+    const standing = presetToolRows('win32', true)
+    const defaultRows = presetToolRows('win32', false)
     expect(standing.map(row => row.id)).toEqual(defaultRows.map(row => row.id))
     expect(standing.filter(row => row.id !== 'compaction')).toEqual(defaultRows.filter(row => row.id !== 'compaction'))
     // The pruner keeps pruning either way.
@@ -177,44 +163,37 @@ describe('arya-image preset definition', () => {
     expect(childrenOf(defaultCompaction).every(child => child.disabled === undefined)).toBe(true)
   })
 
-  it('mounts the delegation group with the shipped children and providers', () => {
-    const delegation = presetToolRows('win32').find(row => row.id === 'delegation')
-    expect(delegation?.name).toBe('cordis:group')
-    expect(delegation?.isolate).toEqual({ workflowEngine: true })
-    const children = childrenOf(delegation)
-    expect(children.map(child => child.id)).toEqual([
-      'tool-subagent-control',
-      'tool-subagent',
-      'tool-subagent-fork',
-      'workflow-ptc',
-      'tool-workflow',
-    ])
-    expect(children.map(child => child.name)).toEqual([
-      '@deepseek-ai/dsh-tool-subagent-control',
-      '@deepseek-ai/dsh-tool-subagent',
-      '@deepseek-ai/dsh-tool-subagent',
-      '@deepseek-ai/dsh-workflow-ptc',
-      '@deepseek-ai/dsh-tool-workflow',
-    ])
-    const configs = children.map(child => (child.config ?? {}) as { provider?: string; toolName?: string })
-    expect(configs.map(config => config.provider)).toEqual([undefined, 'spawn', 'fork', 'spawn', undefined])
-    expect(configs.map(config => config.toolName)).toEqual([undefined, 'subagent', 'subagent_fork', undefined, undefined])
+  it('carries the mask as the last row, whitelisting the image tools and the core set', () => {
+    // The mask registers a restriction that can only name tools already in the
+    // registry, so it has to mount after every other row.
+    const rows = presetToolRows('win32')
+    const last = rows[rows.length - 1]
+    expect(last?.id).toBe(ARYA_IMAGE_TOOLSET_ROW_ID)
+    expect(last?.name).toBe(ARYA_IMAGE_TOOLSET_MODULE)
+    const config = last?.config as { allow?: string[] }
+    expect(config.allow).toEqual(agentPresetAllowList('win32'))
+    for (const name of IMAGE_TOOL_NAME_LIST) expect(config.allow).toContain(name)
   })
 
-  it('mounts the plugin-manager row only when the host exposes profileContext', () => {
-    // Absent profileContext service -> disabled, exactly like the shipped row.
-    expect(presetToolRows('win32').find(row => row.id === 'tool-plugin-manager')?.disabled).toBe(true)
-    const enabled = presetToolRows('win32', true).find(row => row.id === 'tool-plugin-manager')
-    expect(enabled?.name).toBe('@deepseek-ai/dsh-plugin-manager/tools')
-    expect(enabled?.disabled).toBe(false)
-  })
-
-  it('keeps the plugin-market row disabled', () => {
-    for (const rows of [presetToolRows('win32'), presetToolRows('win32', true)]) {
-      const market = rows.find(row => row.id === 'tool-plugin-market')
-      expect(market?.name).toBe('@deepseek-ai/dsh-plugin-market/tools')
-      expect(market?.disabled).toBe(true)
+  it('keeps the image tools and the core host tools, and nothing else foreign', () => {
+    const allow = new Set(agentPresetAllowList('win32'))
+    for (const name of IMAGE_TOOL_NAME_LIST) expect(allow.has(name)).toBe(true)
+    for (const name of ['read', 'write', 'edit', 'glob', 'grep', 'read_image', 'working_directory', 'pwsh',
+      'job_list', 'job_output', 'job_kill', 'web_search', 'web_fetch', 'ask_user_question', 'present']) {
+      expect(allow.has(name)).toBe(true)
     }
+    // Tools other bundles and MCP servers register globally stay masked.
+    for (const name of ['subagent', 'subagent_fork', 'workflow', 'todo_write', 'skill', 'schedule_list',
+      'exit_plan_mode', 'create_goal', 'run_code', 'mcp__rea__binary_overview']) {
+      expect(allow.has(name)).toBe(false)
+    }
+  })
+
+  it('follows the platform for the shell name', () => {
+    expect(agentPresetAllowList('win32')).toContain('pwsh')
+    expect(agentPresetAllowList('win32')).not.toContain('bash')
+    expect(agentPresetAllowList('linux')).toContain('bash')
+    expect(agentPresetAllowList('linux')).not.toContain('pwsh')
   })
 
   it('carries an image-focused persona without replacing the runtime context', () => {
@@ -426,14 +405,6 @@ describe('billion-context signals', () => {
   })
 })
 
-describe('plan-mode section', () => {
-  it('carries the shipped standard text, paragraph for paragraph', () => {
-    expect(ARYA_IMAGE_PLAN_SECTION.startsWith('You are in plan mode.')).toBe(true)
-    expect(ARYA_IMAGE_PLAN_SECTION.endsWith('do not proceed with implementation.\n')).toBe(true)
-    expect(ARYA_IMAGE_PLAN_SECTION.trim().split('\n\n')).toHaveLength(6)
-  })
-})
-
 describe('image tool names', () => {
   it('match the tools the Bundle registers', () => {
     expect([...IMAGE_TOOL_NAME_LIST]).toEqual([
@@ -612,8 +583,8 @@ describe('arya-image preset registration', () => {
       'command-compact',
     ])
     expect(children.find(child => child.id === 'tool-result-pruner')?.disabled).toBeUndefined()
-    // The stand-down removes no row: the full baseline is still registered.
-    expect(registeredDefinition(register)?.plugins.map(row => row.id)).toEqual(BASELINE_ROW_IDS)
+    // The stand-down removes no row: the same core rows are still registered.
+    expect(registeredDefinition(register)?.plugins.map(row => row.id)).toEqual(CORE_ROW_IDS)
   })
 
   it('skips registration when the fiber is disposed while the compaction decision settles', async () => {
@@ -628,19 +599,25 @@ describe('arya-image preset registration', () => {
     expect(h.info).toHaveBeenCalledWith(expect.stringContaining('nothing to register'))
   })
 
-  it('passes the host profileContext service into the definition', async () => {
-    // A composition that provides profileContext gets the manager row enabled;
-    // one that does not keeps it disabled, exactly like the shipped preset.
+  it('registers the tool mask with the image and core allow list', async () => {
+    const register = vi.fn(async () => vi.fn())
+    await mountAgentPreset(registerHarness({ registry: { register } }).ctx as never, { platform: 'win32' })
+    const mask = registeredDefinition(register)?.plugins.find(row => row.id === ARYA_IMAGE_TOOLSET_ROW_ID)
+    expect(mask?.name).toBe(ARYA_IMAGE_TOOLSET_MODULE)
+    expect((mask?.config as { allow?: string[] } | undefined)?.allow).toEqual(agentPresetAllowList('win32'))
+  })
+
+  it('registers the same rows whether or not the host exposes profileContext', async () => {
+    // Every row this preset keeps needs no host service beyond tools and fs, so
+    // the profileContext service must no longer change the definition.
     const without = vi.fn(async () => vi.fn())
     await mountAgentPreset(registerHarness({ registry: { register: without } }).ctx as never, { platform: 'win32' })
-    expect(registeredDefinition(without)?.plugins.find(row => row.id === 'tool-plugin-manager')?.disabled).toBe(true)
-
     const withService = vi.fn(async () => vi.fn())
     await mountAgentPreset(
       registerHarness({ registry: { register: withService }, profileContext: {} }).ctx as never,
       { platform: 'win32' },
     )
-    expect(registeredDefinition(withService)?.plugins.find(row => row.id === 'tool-plugin-manager')?.disabled).toBe(false)
+    expect(registeredDefinition(withService)?.plugins).toEqual(registeredDefinition(without)?.plugins)
   })
 
   it('stays silent on a composition with no preset registry', async () => {

@@ -97,7 +97,6 @@ export async function mountAgentPreset(ctx: Context, config: AgentPresetMountCon
 
   const definition = buildAgentPresetDefinition({
     platform: config.platform ?? process.platform,
-    profileContext: profileContext !== undefined,
     standDownCompaction,
   })
 

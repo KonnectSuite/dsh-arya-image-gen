@@ -2,7 +2,7 @@
 
 AryaCode fork of `shanliuling/dsh-image-gen`, reduced to a single provider: your
 local ComfyUI server. A DeepSeek Harness plugin. `main`. Releases are versioned
-per commit (`v0.19.0` and counting).
+per commit (`v0.19.2` and counting).
 
 ## Commands
 
@@ -43,6 +43,12 @@ test:package on ubuntu and windows, node 24, pnpm 11.7.0. The engine floor in
    Render tab were removed on purpose (v0.19.0): a model with its own HTML and
    SVG ability reached for them and drifted, and a rasterized page proved
    nothing. Do not reintroduce them, and do not ship a browser dependency.
+8. **The preset is one small row list plus a mask.** The Arya Image preset keeps
+   the image tools and a core set, and its last row
+   (`dsh-arya-image-gen/agent-toolset`) masks every other globally registered
+   tool. A restriction can only name inherited globals, so a tool provided by
+   the preset's own rows cannot be masked: to keep the session small, add a tool
+   to `coreToolNames` in `src/agent-preset/definition.ts`, not to `presetToolRows`.
 
 ## Known rough edges
 

@@ -27,7 +27,7 @@ export const ARYA_IMAGE_PERSONA = [
   'the user to attach a reference instead of inventing the details.',
   '',
   'Work close to the files: read before you overwrite, keep prompts in the workspace when they',
-  'matter, and say where an image was saved. Skills, subagent, goal, scheduling and the other',
-  'DSH tools are available here; use them when they serve the image task instead of assuming',
-  'this preset is a reduced shell.',
+  'matter, and say where an image was saved. This session is deliberately small: it has no',
+  'skills, no subagents, no goals, no plan mode, no scheduling and no todo list. Do the image',
+  'work directly with the tools you do have, and say so when a request needs one of the others.',
 ].join('\n')

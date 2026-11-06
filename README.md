@@ -143,12 +143,13 @@ Security: do not expose ComfyUI to the internet without authentication. Prefer a
 
 This bundle also registers an agent preset, **Arya Image**, for sessions whose only job is making images. Pick it in the preset picker when you start a session.
 
-- Keeps the working set an image session needs: the eight image tools, `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), `read_image`, the job tools, `web_search` and `web_fetch`, `ask_user_question`, and `present`.
-- Declares those as its own rows, the way the shipped presets do, so the session has exactly this set and nothing from the Engineering bundle, MCP servers, computer use, skills, subagents or goals.
+- Mounts the full DSH standard tool row set: the eight image tools and this plugin's rows, plus `read`, `write`, `edit`, `glob`, `grep`, `pwsh` (or `bash`), `read_image`, the job tools, `schedule`, skills and `skill`, goals, plan mode, compaction, `web_search` and `web_fetch`, `ask_user_question`, `todo_write`, `present`, delegation (`subagent`, `subagent_fork`, `workflow`), and the host plugin-manager and plugin-market rows.
+- Declares those as its own rows, the way the shipped presets do, so the session has the shipped capability set and nothing from other installed bundles: no Engineering rows, no MCP servers, no computer use.
+- Compaction is the harness default: `compaction-basic`, `/compact` and the tool-result pruner. When billion-context owns compaction — its `biliBasicCompactionPolicy` service is up and its ownership verdict is `active` — those two summary rows are registered disabled and the pruner stays; without billion-context, or when its verdict never arrives, the stock rows stay exactly as they are.
 
 Set `agentPreset: false` in the plugin configuration to stop the preset from being registered.
 
-Two things worth knowing. A preset is context economy, not a sandbox: masked tools still exist on the host, they are just not offered to that session. And editing a preset in the Web editor replaces its whole row list, so a later plugin update will not merge into an edited copy.
+Two things worth knowing. A preset selects the rows its session mounts; it is not a sandbox, so tools it does not mount still exist on the host, they are just not offered to that session. And editing a preset in the Web editor replaces its whole row list, so a later plugin update will not merge into an edited copy.
 
 ## Reference images
 

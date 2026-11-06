@@ -70,8 +70,8 @@ export interface Config {
   /** Task Scheduler task the plugin runs and ends when using the scheduled-task launch. */
   comfyuiScheduledTaskName?: string
   /**
-   * Register the Arya Image agent preset: core DSH tools plus this plugin's
-   * tools, with the other installed bundles' tools masked out to save context.
+   * Register the Arya Image agent preset: the full DSH standard tool row set plus
+   * this plugin's image tools; tools from other installed bundles stay out of it.
    */
   agentPreset?: boolean
   /** Also write every generated image as a file under the session workspace. */

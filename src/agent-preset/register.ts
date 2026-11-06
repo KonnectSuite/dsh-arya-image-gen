@@ -14,9 +14,15 @@
  * Registration is released with this plugin's fiber; a duplicate id is logged
  * and dropped, because the preset already mounted is the one sessions are using.
  *
+ * The mount is asynchronous because the compaction owner has to be settled
+ * first: when billion-context owns compaction, the definition is built with its
+ * stock summary rows disabled. The wait never exceeds the resolver's bounded
+ * poll, and a fiber that is disposed while waiting registers nothing.
+ *
  * @module dsh-arya-image-gen/agent-preset/register
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { resolveStandDown } from './billion-context.js'
 import { buildAgentPresetDefinition, type AgentPresetDefinition } from './definition.js'
 
 /** The slice of the preset registry this plugin uses. */
@@ -49,11 +55,14 @@ function service(ctx: Context, name: string): unknown {
 /**
  * Mount the preset: register the definition and release it with this fiber.
  *
+ * Awaits the billion-context compaction decision before building the definition,
+ * so a preset that loses its summary rows to another engine is registered once,
+ * in its final shape. A fiber disposed during that wait is not registered at all.
+ *
  * @param ctx - the mount point's context, with `agentPresets` injected.
  * @param config - host facts the definition depends on.
  */
-export function mountAgentPreset(ctx: Context, config: AgentPresetMountConfig = {}): void {
-  const definition = buildAgentPresetDefinition({ platform: config.platform ?? process.platform })
+export async function mountAgentPreset(ctx: Context, config: AgentPresetMountConfig = {}): Promise<void> {
   // Proves the Loader reached this mount at all: a boot log with no line from
   // this module means the registry service never appeared, not a bad definition.
   ctx.logger?.info?.('arya-image-preset: mount point active')
@@ -63,22 +72,49 @@ export function mountAgentPreset(ctx: Context, config: AgentPresetMountConfig = 
     return
   }
 
+  const profileContext = service(ctx, 'profileContext')
+  let disposed = false
   let release: (() => void) | undefined
   ctx.effect(() => () => {
+    disposed = true
     if (typeof release === 'function') release()
   })
 
-  // A rejected registration (for example a duplicate id) must not fail the plugin.
-  void Promise.resolve(presets.register(definition)).then(
-    (disposer) => {
-      release = disposer
-      ctx.logger?.info?.(`arya-image-preset: registered ${definition.id} (${definition.name})`)
-      reportBrokenRows(ctx, presets, definition)
+  const standDownCompaction = await resolveStandDown(
+    {
+      get: serviceName => service(ctx, serviceName),
+      logger: {
+        info: message => ctx.logger?.info?.(message),
+        warn: message => ctx.logger?.warn?.(message),
+      },
     },
-    (error: unknown) => {
-      ctx.logger?.warn?.(`arya-image-preset: preset not registered: ${describe(error)}`)
-    },
+    { profileContext },
   )
+  if (disposed) {
+    ctx.logger?.info?.('arya-image-preset: fiber disposed before the preset was registered; nothing to register')
+    return
+  }
+
+  const definition = buildAgentPresetDefinition({
+    platform: config.platform ?? process.platform,
+    profileContext: profileContext !== undefined,
+    standDownCompaction,
+  })
+
+  // A rejected registration (for example a duplicate id) must not fail the plugin.
+  try {
+    release = await Promise.resolve(presets.register(definition))
+  } catch (error) {
+    ctx.logger?.warn?.(`arya-image-preset: preset not registered: ${describe(error)}`)
+    return
+  }
+  if (disposed) {
+    // The fiber went away while the registry was accepting the definition.
+    if (typeof release === 'function') release()
+    return
+  }
+  ctx.logger?.info?.(`arya-image-preset: registered ${definition.id} (${definition.name})`)
+  reportBrokenRows(ctx, presets, definition)
 }
 
 /**

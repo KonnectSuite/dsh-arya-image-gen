@@ -42,8 +42,8 @@ export const CHECK_WORKFLOWS_ROUTE = '/plugins/dsh-image-gen/check-workflows'
  * Model-facing tool names this Bundle registers.
  *
  * Single source of truth: the registrations below use these values, and the
- * Arya Image agent preset whitelists exactly this set out of the host-wide
- * tool registry, so the two can never drift.
+ * Arya Image agent preset sees them as this bundle's host-wide tools, so the
+ * names cannot drift.
  */
 export const IMAGE_TOOL_NAMES = {
   generateImage: 'generate_image',

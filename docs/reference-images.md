@@ -56,8 +56,8 @@ is an input.
 ## Which preset has the web tools
 
 `Arya Image` mounts `tool-web` as one of its own rows (search plus fetch), so the
-loop works there directly — as it does on **Standard mode** and **Arya
-Standard**. `Arya Qwen` does not mount the web rows, so it has no search.
+loop works there directly — as it does on **Standard mode** and the other
+AryaCode presets, which mount the same full DSH row set.
 
 The history is worth knowing if you extend the preset: an earlier version kept
 the image tools and relied on masking the inherited ones. A mask can only name

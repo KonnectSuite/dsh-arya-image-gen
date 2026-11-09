@@ -56,3 +56,21 @@ test:package on ubuntu and windows, node 24, pnpm 11.7.0. The engine floor in
   and are not source. Remove them when convenient; do not add more like them.
 - The fork relationship with `shanliuling/dsh-image-gen` is permanent. Upstream
   sync is manual and rare; treat this tree as its own project.
+
+## Releasing
+
+A version bump is not a release. Four things have to be true before an update
+reaches a user: `npm view <name>@<version> version` prints it, the market `catalog`
+branch lists it, the entry's `releases[0].sha256` is the hash npm serves, and
+`check-catalogue-parity.mjs` exits 0. One command does all four:
+
+    node ../dsh-arya-market/scripts/release-plugin.mjs
+
+A hot-copy into a profile's `node_modules` is a debug aid, never a release: no other
+machine and no update check can see it. Publishing a version without cataloguing it is
+the worst state — the market answers from `releases[0]`, so every user is told they are
+up to date on a release that exists. Ask the owner once for the exact version; never
+hand-edit `data/arya-plugins.json`.
+
+The bump, the changelog entry under `docs/releases/` and `(vX.Y.Z)` in the commit
+subject land together (rule 5); this command publishes what is committed.

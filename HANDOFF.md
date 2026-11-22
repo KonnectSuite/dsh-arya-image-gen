@@ -77,16 +77,16 @@ else in this file is lead-authored and reviewed.
   "what lives where" table, and a "not part of the plugin" list.
 - `docs/releases/v0.20.0.md` ✅ new long-form note: why the scoped name, what moves and what does
   not (with line refs), the release command, the docs inventory, the known gaps.
-- `index.json` (root, 80 lines) ✅ new: one entry. It was committed with the name kept **unscoped**
+- `index.json` (root, 90 lines) ✅ new: one entry. It was committed with the name kept **unscoped**
   `dsh-arya-image-gen` — a scoped entry listing another package's versions would be a lie — with
   28 stable versions, real `publishTimestamp` values and per-version `engines`
   (0.11.0 predates the declaration, so it carries none), newest `0.19.2`
   (`1794242093` = 2026-11-09T16:34:53Z), `icon: "icon.svg"`.
   `scripts/sync-market-index.mjs` has since flipped that entry to `package.json`'s name, so the
   listing now reads `@aryacode/dsh-arya-image-gen` and carries only the versions npm serves under
-  it — 0.20.0 `1795310393` and 0.20.1 `1795310617`, both `engines.dsh >=0.1.7 <1`. The pre-rename
-  rows left with the old package name and stay installable by it. Never hand-edit the version
-  list.
+  it — 0.20.0 `1795310393`, 0.20.1 `1795310617` and 0.20.2 `1795312326`, all `engines.dsh >=0.1.7 <1`.
+  The pre-rename rows left with the old package name and stay installable by it. Never hand-edit the
+  version list.
 - `scripts/sync-market-index.mjs` ✅ new: rebuilds that file from the **registry packument over
   HTTPS** (`https://registry.npmjs.org/<name>`, scoped name keeps its slash), refuses an answer
   with no `time`/`versions` or with an array-shaped `versions`, skips prereleases and the

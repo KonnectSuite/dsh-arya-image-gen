@@ -2,14 +2,24 @@
 
 All published versions of Arya Image Gen, newest first. Long-form release notes for every version live in [`docs/releases/`](docs/releases/); the date in each heading is that version's npm publish date (UTC) from the registry packument, except 0.8.6, which predates npm publishing. A version that is committed and versioned but not yet on npm says so in its heading instead of carrying a date.
 
-## 0.20.0 — not yet published
+## 0.20.1 — 2026-11-22
+
+**Fixed — the archive now ships the icon the manifest advertises.** `package.json` maps `exports["./icon"]` to `icon.svg`, but `icon.svg` was missing from `files`, so the 0.20.0 tarball had no icon to serve. It is packed from 0.20.1, the same way `@aryacode/dsh-plugin-arya-computer-use` ships its own.
+
+**Changed — the archive stopped carrying the documentation screenshots.** 0.20.0 packed `docs/assets/readme/*.webp`: 18 MB of README pictures that only GitHub and jsDelivr render, which made the installed package 20 MB. The 0.20.1 archive is 1.7 MB over 84 files — the built bundles and their types, the three skills, the five shipped workflow JSONs, `icon.svg`, `README.md`, `LICENSE`, `NOTICE`, `cordis.patch.yml`. Nothing at runtime reads `docs/`: the prefill pack is compiled into `src/generated/default-workflows.ts` by `pnpm run sync:workflows`, so the screenshots were dead weight in every install.
+
+**Changed — the plugin-index entry follows the renamed package.** `scripts/sync-market-index.mjs` keys the listing off `package.json`, so `index.json` now carries one entry named `@aryacode/dsh-arya-image-gen` and lists the versions npm serves under that name (0.20.0 up). The pre-rename versions are not under it, and the script refuses to list versions the registry does not serve; 0.11.0–0.19.2 stay installable by their own name.
+
+Tests: 422 passed, 1 skipped. `pnpm run test:package` passes both schemastery branches against the packed, renamed tarball.
+
+## 0.20.0 — 2026-11-22
 
 **Changed — the package is now `@aryacode/dsh-arya-image-gen`.** The npm name moved from the unscoped `dsh-arya-image-gen` to the scoped first-party name, so the install line, the tarball and the catalogue entry all read the same thing. Nothing about the running plugin moves: the plugin id stays `dsh-image-gen` (`src/index.ts:43`), so do its settings namespace, its HTTP routes under `/plugins/dsh-image-gen/`, its workspace folder and its caches. Remove the old package, add the new one, and your endpoint, imported workflows, gallery and saved images come across unchanged. Releases up to 0.19.2 stay installable under `dsh-arya-image-gen`; that name is never pulled down. Long-form: [`docs/releases/v0.20.0.md`](docs/releases/v0.20.0.md).
 
 **Added.**
 
 - [`CHANGELOG.md`](CHANGELOG.md) — this file: every published version from 0.8.6 and 0.11.0 forward, newest first, condensed from the 28 long-form notes in `docs/releases/`, dated from the npm packument. It is what `release-plugin.mjs` reads for release notes and what `.github/workflows/release.yml` cuts a GitHub Release from.
-- `index.json` at the repository root — the plugin-index listing a user adds as an index source on any DSH build (`https://cdn.jsdelivr.net/gh/KonnectSuite/dsh-arya-image-gen@latest/index.json`), listing all 28 stable versions npm serves with their real publish times and per-version host requirements. The copy this replaces lived at `docs/market/index.json` and still said `0.15.0`.
+- `index.json` at the repository root — the plugin-index listing a user adds as an index source on any DSH build (`https://cdn.jsdelivr.net/gh/KonnectSuite/dsh-arya-image-gen@latest/index.json`), listing the stable versions npm serves under the entry's name with their real publish times and per-version host requirements: 28 of them under the unscoped name when it was written, and from 0.20.1 under `@aryacode/dsh-arya-image-gen`, because the generator follows `package.json`. The copy this replaces lived at `docs/market/index.json` and still said `0.15.0`.
 - `scripts/sync-market-index.mjs` — regenerates that listing from npm (`--dry-run`, `--check`), so it cannot silently drift again. Not in `package.json` `files`: it is a repository artifact, never packed.
 - `icon.svg` — the Plugin Manager mark, in the same family as the other AryaCode plugins.
 - `.github/ISSUE_TEMPLATE/bug_report.yml`, `feature_request.yml`, `config.yml`, `PULL_REQUEST_TEMPLATE.md` — the bug form asks for the host version, plugin version, OS, endpoint, workflow name and the redacted tool error.

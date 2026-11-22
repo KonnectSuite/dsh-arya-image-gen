@@ -9,7 +9,7 @@
 <p><b>In-chat generation · AI creative canvas · Studio batch creation · workflow comparison · prompt inspiration · gallery · built-in ComfyUI server control</b></p>
 
 <p>
-  <a href="https://www.npmjs.com/package/dsh-arya-image-gen"><img src="https://img.shields.io/npm/v/dsh-arya-image-gen?style=flat-square&label=npm" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@aryacode/dsh-arya-image-gen"><img src="https://img.shields.io/npm/v/@aryacode/dsh-arya-image-gen?style=flat-square&label=npm" alt="npm version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-f5c542?style=flat-square" alt="License: Apache-2.0" /></a>
   <img src="https://img.shields.io/badge/provider-ComfyUI-8b5cf6?style=flat-square" alt="Provider: ComfyUI" />
   <img src="https://img.shields.io/badge/host-DSH%200.1.7%20%E2%80%93%200.x-2f6f4f?style=flat-square" alt="Host: DeepSeek Harness 0.1.7 to below 1.0" />
@@ -35,7 +35,7 @@ Arya Image Gen gives a DSH web profile the whole image loop in one place: genera
 
 It installs into **any DeepSeek Harness web profile**. AryaCode is a rebranded DeepSeek Harness, so the same package drops into an AryaCode build and into an upstream DSH build alike; nothing here is AryaCode-only, and the same install command, the same settings page and the same plugin-market index work on both.
 
-Releases: [GitHub Releases](https://github.com/KonnectSuite/dsh-arya-image-gen/releases) · [`CHANGELOG.md`](CHANGELOG.md) (every version, newest first) · npm package [`dsh-arya-image-gen`](https://www.npmjs.com/package/dsh-arya-image-gen), which is the name npm serves today (newest 0.19.2); from 0.20.0 the package is `@aryacode/dsh-arya-image-gen`.
+Releases: [GitHub Releases](https://github.com/KonnectSuite/dsh-arya-image-gen/releases) · [`CHANGELOG.md`](CHANGELOG.md) (every version, newest first) · npm package [`@aryacode/dsh-arya-image-gen`](https://www.npmjs.com/package/@aryacode/dsh-arya-image-gen) (0.20.0 and newer; 0.19.2 and older sit under the retired name [`dsh-arya-image-gen`](https://www.npmjs.com/package/dsh-arya-image-gen)).
 
 ---
 
@@ -55,31 +55,32 @@ The plugin opens no listening port of its own. It is a client of the ComfyUI por
 
 ### From npm — works on every DeepSeek Harness
 
-The newest published release is 0.19.2, and npm serves it under the name
-`dsh-arya-image-gen`:
+The package is `@aryacode/dsh-arya-image-gen`, and that is what npm serves today
+(newest 0.20.1):
 
 ```bash
-dsh plugin --profile web add dsh-arya-image-gen
+dsh plugin --profile web add @aryacode/dsh-arya-image-gen
 ```
 
 Then restart that profile. The plugin lands as a layer in the profile's config; confirm it with:
 
 ```bash
-dsh --profile web --dump-config | grep -n "dsh-arya-image-gen"
+dsh --profile web --dump-config | grep -n "dsh-image-gen"
 ```
 
-You should see the `dsh-arya-image-gen` layer and its `image-gen` row with the config under it. That line is the proof the row is mounted; if it is missing, the install did not reach the profile you are running.
+You should see the `@aryacode/dsh-arya-image-gen` layer and its `image-gen` row with the config under it. That line is the proof the row is mounted; if it is missing, the install did not reach the profile you are running.
 
-**The package name changes at 0.20.0, and it is a rename, not a rewrite.** Up to
-0.19.2 the bundle is published as `dsh-arya-image-gen`; from 0.20.0 it is
-`@aryacode/dsh-arya-image-gen`, and that scoped name does not resolve on npm
-until the 0.20.0 release is out. When it is, remove the old name
+**0.20.0 renamed the package, and it is a rename, not a rewrite.** Up to 0.19.2
+the bundle was published as the unscoped `dsh-arya-image-gen`; from 0.20.0 it is
+`@aryacode/dsh-arya-image-gen`. Nothing about the running plugin moved: the
+bundle id inside the package stays `dsh-image-gen`, so the settings namespace,
+your imported workflows and your gallery are read from the same place either
+way. If you installed under the old name, remove it
 (`dsh plugin --profile web remove dsh-arya-image-gen`), add the scoped one and
-restart. Nothing of yours moves: the bundle id inside the package stays
-`dsh-image-gen`, so the settings namespace, your imported workflows and your
-gallery are read from the same place either way. Install one name or the other,
-never both — two copies of the same bundle id in one profile is a broken
-install, not an upgrade. The old name stays on npm and is never pulled down.
+restart. Install one name or the other, never both — two copies of the same
+bundle id in one profile is a broken install, not an upgrade. The old name stays
+on npm — 0.19.2 and below still install by it — but it is deprecated, and no
+0.20.x was ever published under it.
 
 ### From the plugin market
 

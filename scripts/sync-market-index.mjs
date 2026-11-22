@@ -17,7 +17,6 @@
 //   node scripts/sync-market-index.mjs            rewrite index.json
 //   node scripts/sync-market-index.mjs --dry-run  report what would change
 //   node scripts/sync-market-index.mjs --check    exit 1 when index.json is stale
-import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -37,21 +36,34 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const indexFile = join(root, 'index.json')
 const index = JSON.parse(readFileSync(indexFile, 'utf8'))
 
-// npm is a .cmd shim on Windows: Node refuses to spawn it without a shell
-// (EINVAL), and shell:true concatenates the arguments — the only argument here
-// is the package name read from package.json, never user input.
-let packument = JSON.parse(
-  execFileSync('npm', ['view', pkg.name, '--json'], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-    shell: process.platform === 'win32',
-  }),
-)
-// Some npm shells answer with the packument wrapped in an array.
-if (Array.isArray(packument)) packument = packument[0]
-if (!packument?.time || !packument?.versions) {
+// The registry's full packument, read over HTTPS. `npm view <name> --json` is
+// the wrong tool here even though it looks right: the CLI answers with an
+// abbreviated document — an array-wrapped summary whose "versions" is a flat
+// list of version strings and whose per-version manifests are dropped. Iterating
+// it yields array indexes ("0", "1", …), so the publish-time lookup below misses
+// and every per-version host requirement is unavailable. The scoped name keeps
+// its slash: the registry routes @scope/name directly.
+const packumentUrl = `https://registry.npmjs.org/${pkg.name}`
+let packument
+try {
+  const response = await fetch(packumentUrl, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(60_000),
+  })
+  if (!response.ok) {
+    console.error(
+      `${packumentUrl} answered ${response.status} — is the registry unreachable, or is ${pkg.name} not published yet?`,
+    )
+    process.exit(1)
+  }
+  packument = await response.json()
+} catch (error) {
+  console.error(`cannot read ${packumentUrl}: ${error.message}`)
+  process.exit(1)
+}
+if (!packument?.time || !packument?.versions || Array.isArray(packument.versions)) {
   console.error(
-    `npm view ${pkg.name} returned no packument (time/versions) — is the registry unreachable, or is this version of the package not published yet?`,
+    `${packumentUrl} returned no usable packument (time + per-version manifests) — is the registry answering with an abbreviated document?`,
   )
   process.exit(1)
 }

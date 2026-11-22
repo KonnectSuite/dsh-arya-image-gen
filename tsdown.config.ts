@@ -9,9 +9,9 @@ const CLIENT_EXTERNALS = [
 ]
 
 const host: UserConfig = {
-  name: 'dsh-arya-image-gen',
+  name: '@aryacode/dsh-arya-image-gen',
   // Two host entry points: the bundle itself, and the one module an agent
-  // preset can mount as a row (`dsh-arya-image-gen/agent-toolset`).
+  // preset can mount as a row (`@aryacode/dsh-arya-image-gen/agent-toolset`).
   entry: {
     index: 'lib/types/index.js',
     'agent-toolset': 'lib/types/agent-preset/toolset.js',
@@ -26,7 +26,7 @@ const host: UserConfig = {
 }
 
 const client: UserConfig = {
-  name: 'dsh-arya-image-gen/client',
+  name: '@aryacode/dsh-arya-image-gen/client',
   entry: { client: 'lib/types/client/index.js' },
   outDir: 'lib',
   format: 'cjs',
@@ -49,7 +49,7 @@ const client: UserConfig = {
   },
   outputOptions: {
     entryFileNames: 'client.js',
-    banner: 'window.__ModuleLoader__.load({ id: "dsh-arya-image-gen", factory: (require) => {',
+    banner: 'window.__ModuleLoader__.load({ id: "@aryacode/dsh-arya-image-gen", factory: (require) => {',
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
   },

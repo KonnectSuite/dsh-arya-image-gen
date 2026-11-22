@@ -1,0 +1,41 @@
+name: Feature request
+description: Something you want to do with the plugin that it cannot do today.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the job, not the implementation. A request that names the prompt you
+        wanted to run, the workflow you imported and the result you expected is
+        actionable; one that names a button that should exist is not. Note the shape of
+        this plugin: it talks to a ComfyUI server and nothing else, so a job that needs
+        a hosted image API is out of scope here, and the answer is always pixels — an
+        image, not a page the plugin renders.
+  - type: textarea
+    id: job
+    attributes:
+      label: What you want to do
+      description: The image job in your words, and what the answer should look like when the plugin supports it.
+      placeholder: |
+        Run one prompt across the three imported workflows and keep the three results
+        side by side in the gallery with their seeds.
+    validations:
+      required: true
+  - type: textarea
+    id: blocked
+    attributes:
+      label: How the plugin blocks it today
+      description: What the plugin does now instead, and where the workaround stops working.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: Optional. The setting, placeholder, workflow edit or manual step you reach for now.
+  - type: textarea
+    id: context
+    attributes:
+      label: Workflow and ComfyUI context
+      description: Optional. The workflow name and the ComfyUI version or node pack the job needs, when the request depends on them.
+      placeholder: Qwen_Image_2_1_Compose_1024 - ComfyUI 0.37.4 with the Qwen Image 2.1 pack

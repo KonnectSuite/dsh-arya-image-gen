@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/KonnectSuite/dsh-arya-image-gen/security/advisories/new
+    about: SECURITY.md routes vulnerability reports to GitHub Security Advisories - never open a public issue holding credentials or response bodies.
+  - name: Installing or running ComfyUI
+    url: https://github.com/KonnectSuite/dsh-arya-image-gen/blob/main/docs/install-comfyui.md
+    about: The plugin is a client, so getting a ComfyUI up (desktop app, portable build, comfy-cli, manual) is a documentation question, not an issue here.
+  - name: The README - quick start, endpoints, workflows, server control, FAQ
+    url: https://github.com/KonnectSuite/dsh-arya-image-gen#readme
+    about: Installing the plugin, the market index, the endpoint fields and the connection-error FAQ are answered there first.

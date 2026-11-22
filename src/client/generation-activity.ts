@@ -11,7 +11,7 @@
  * Kept framework-free: the card publishes, the dock subscribes, and the hook
  * lives with the components.
  *
- * @module dsh-arya-image-gen/client/generation-activity
+ * @module @aryacode/dsh-arya-image-gen/client/generation-activity
  */
 import type { ComfyUIJobSnapshot } from '../comfyui-progress.js'
 

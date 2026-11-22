@@ -1,0 +1,130 @@
+name: Bug report
+description: The plugin did not do what the README or its settings page says it does.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A report is acted on fastest when it names the host version, the plugin
+        version, the endpoint and the exact text the tool returned. "Generation
+        failed" cannot be reproduced. Update to the newest published release first:
+        a bug fixed last week is not answered here.
+
+        **Redact before you submit.** This plugin talks to a ComfyUI endpoint that
+        may sit behind a proxy, and the settings card's **Request headers** field can
+        hold an `Authorization` token. Write the endpoint **host and port**; never
+        paste request headers, tokens, cookies, signed image URLs, a private model
+        path, or a prompt or reference image you are not allowed to share.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I am on the newest published release (Settings -> Plugins -> Arya Image Gen shows the installed version).
+          required: true
+        - label: I checked the README FAQ and the troubleshooting section first.
+          required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: What happened, and what you expected
+      description: Both halves. Name the surface it happened on: a chat tool, the Studio workbench, the canvas, the gallery, the workflow picker or the server controls.
+      placeholder: |
+        generate_image returned "ComfyUI connection refused" after I changed the
+        endpoint to the LAN address; I expected the image to come back like it does
+        on 127.0.0.1.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: The exact steps
+      description: The shortest sequence that reproduces it, including the prompt or the tool call and its arguments. Say whether it fails every time.
+      placeholder: |
+        1. Settings -> Arya Image Gen -> Connection: endpoint http://192.168.1.20:8188
+        2. Studio tab, workflow Qwen_Image_2_1_Cutout_RGBA_1024, one reference image
+        3. Generate - status chip shows "offline", tool call fails
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: dsh_version
+    attributes:
+      label: '`dsh --version` output'
+      description: The host, exactly as the command prints it.
+      placeholder: dsh/0.1.7-rc.2
+    validations:
+      required: true
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Plugin version
+      description: The Arya Image Gen version on the Plugins page, or in the installed package.
+      placeholder: 0.19.2
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: The OS of the machine running DSH, and the OS of the ComfyUI machine when it is a different one.
+      placeholder: Windows 11 24H2 (DSH) / Ubuntu 24.04 (ComfyUI)
+    validations:
+      required: true
+  - type: dropdown
+    id: comfyui_mode
+    attributes:
+      label: ComfyUI location
+      description: Is the ComfyUI this plugin is pointed at on the same machine as DSH, or another one?
+      options:
+        - Local, same machine as DSH
+        - Remote, another machine or a proxy
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: comfyui_endpoint
+    attributes:
+      label: ComfyUI endpoint and version
+      description: The endpoint from Settings -> Arya Image Gen -> Connection (host and port or the reverse-proxy host, plus the path prefix if there is one) and the ComfyUI version from the status chip or `/system_stats`. Write the host yourself - do not paste request headers or any token.
+      placeholder: http://127.0.0.1:8188 - ComfyUI 0.37.4
+    validations:
+      required: true
+  - type: input
+    id: workflow_name
+    attributes:
+      label: Workflow selected
+      description: The workflow name as the Studio picker and the tool report show it. One line is enough; say which one for an edit or comparison failure.
+      placeholder: Qwen_Image_2_1_Cutout_RGBA_1024
+  - type: textarea
+    id: error
+    attributes:
+      label: The complete tool error, redacted
+      description: The whole tool result or error text, not a paraphrase - including the provenance line when the run got that far. Remove every secret, token and Authorization header first.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: dump_config
+    attributes:
+      label: The plugin layer in the dumped config
+      description: |
+        Run `dsh --profile <profile> --dump-config` and paste the line, or lines, that
+        name this plugin's layer (`dsh-arya-image-gen` / `@aryacode/dsh-arya-image-gen`)
+        and its `image-gen` row, with the config under it. That is what proves the row
+        is mounted and what its `provider` and endpoint settings actually are.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log or screenshot
+      description: Optional. The ComfyUI console output around the failure, or a screenshot of the settings card with secrets covered.
+  - type: checkboxes
+    id: no_secrets
+    attributes:
+      label: Nothing secret in this report
+      options:
+        - label: I confirmed that no API key, token, Authorization header, cookie or credential appears in this report, including its attachments and the dumped config.
+          required: true

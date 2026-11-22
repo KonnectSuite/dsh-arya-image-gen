@@ -1,0 +1,108 @@
+name: release
+
+# This repository publishes nothing from CI. A version reaches a user only when the
+# owner runs the market step from their own machine - `node
+# ../dsh-arya-market/scripts/release-plugin.mjs` publishes what is committed and then
+# proves the four conditions (npm serves the version, the market `catalog` branch
+# lists it, the entry's `releases[0].sha256` is the hash npm serves, and
+# `check-catalogue-parity.mjs` exits 0). None of that belongs in a CI job, and npm
+# trusted publishing is bound to one repository and one workflow, which is not this
+# one, so there is no publish step here and no `id-token` permission. A tag only
+# becomes a GitHub Release whose body is that version's section of CHANGELOG.md, and
+# that needs no secret: the repository token is enough.
+on:
+  push:
+    tags: ['v*']
+  # Rebuild a release from a tag that already exists, without moving the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release, for example v0.19.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      # The tag, `package.json` and the top of CHANGELOG.md must agree, or the
+      # release body would describe a version this tag does not carry. A missing
+      # CHANGELOG.md fails here as well, which is the point: a release with no
+      # changelog section has nothing honest to publish as its notes.
+      - name: Check the tag against package.json and the changelog
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::tag '$TAG' does not look like vX.Y.Z"
+              exit 1
+              ;;
+          esac
+          version="${TAG#v}"
+          packaged="$(node -p "require('./package.json').version")"
+          if [ "$packaged" != "$version" ]; then
+            echo "::error::tag '$TAG' names version '$version' but package.json is '$packaged'"
+            exit 1
+          fi
+          # `--latest` would re-point the current release at an older version, so the
+          # tag has to name the newest `## <version>` heading in the changelog. This
+          # repository versions per commit, so the sections are cut from the top of
+          # the file in order and the first heading wins.
+          newest="$(grep -E '^## [0-9]' CHANGELOG.md | head -n 1 | sed -E 's/^## ([0-9][^ ]*).*/\1/')"
+          if [ -n "$newest" ] && [ "$newest" != "$version" ]; then
+            echo "::error::CHANGELOG.md's newest release is '$newest', so '$version' cannot be marked latest"
+            exit 1
+          fi
+          printf 'VERSION=%s\nTAG=%s\n' "$version" "$TAG" >> "$GITHUB_ENV"
+
+      # The body is the section the changelog already carries for this version, so the
+      # release notes and the committed history cannot disagree. A section starts at
+      # `## 0.19.3 - 2026-11-21` and runs to the next `## ` heading; the heading itself
+      # is dropped and blank lines at both ends are trimmed. Keeping this shape means
+      # the GitHub Release, the changelog and the note under `docs/releases/` tell the
+      # same story.
+      - name: Extract the changelog section
+        run: |
+          awk -v version="$VERSION" '
+            BEGIN { heading = "## " version }
+            index($0, heading) == 1 && (length($0) == length(heading) || substr($0, length(heading) + 1, 1) == " ") { inside = 1; next }
+            inside && /^## / { exit }
+            inside { line[++count] = $0 }
+            END {
+              while (count > 0 && line[count] !~ /[^[:space:]]/) count -= 1
+              first = 1
+              while (first <= count && line[first] !~ /[^[:space:]]/) first += 1
+              for (i = first; i <= count; i += 1) print line[i]
+            }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::CHANGELOG.md has no section \"## $VERSION\". Headings present:"
+            grep -E '^## ' CHANGELOG.md | head -n 20 || true
+            exit 1
+          fi
+          echo "release body (first lines):"
+          head -n 8 release-notes.md
+
+      # `--latest` is what makes this the current release. The edit branch lets a
+      # re-run replace the body instead of failing on a release that already exists.
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file release-notes.md --latest
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release-notes.md --latest
+          fi
+          gh release view "$TAG" --json tagName,isPrerelease,url

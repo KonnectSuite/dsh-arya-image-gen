@@ -50,8 +50,11 @@ comfy install
 comfy launch
 ```
 
-This is also the engine behind the optional **comfy-mcp** server, so a machine
-set up this way can add MCP later without a second install.
+`comfy-cli` is a convenient way to keep ComfyUI and its model folders in one
+place. The plugin's **Start / Stop / Restart** buttons do not go through it: they
+run the Python interpreter and the ComfyUI folder you name in the settings
+(`comfyuiPythonExe` and `comfyuiServerDir`), so a comfy-cli install needs those
+two settings filled in before the buttons will work on it.
 
 ## Manual install
 

@@ -11,7 +11,7 @@
  *
  * - **Rows** mount the tools the session must have. A tool registered by one of
  *   the preset's own rows lives in the agent's scope and is always visible.
- * - **The mask row** (`dsh-arya-image-gen/agent-toolset`) calls
+ * - **The mask row** (`@aryacode/dsh-arya-image-gen/agent-toolset`) calls
  *   `ctx.tools.restrict({ allow })`, which hides every *inherited global* tool
  *   the list does not name. Rows alone cannot do that: the host's composition
  *   registers tools globally - other bundles, MCP servers, computer use - and
@@ -25,7 +25,7 @@
  * Shell rows use `disabled` rather than a platform switch, matching the shipped
  * presets, so a definition is one shape on every platform.
  *
- * @module dsh-arya-image-gen/agent-preset/definition
+ * @module @aryacode/dsh-arya-image-gen/agent-preset/definition
  */
 import { IMAGE_TOOL_NAME_LIST } from '../shared.js'
 import { ARYA_IMAGE_PERSONA } from './persona.js'
@@ -46,7 +46,7 @@ export const ARYA_IMAGE_PRESET_ORDER = 2.5
 export const ARYA_IMAGE_TOOLSET_ROW_ID = 'arya-image-toolset'
 
 /** Package subpath the tool-mask row mounts. */
-export const ARYA_IMAGE_TOOLSET_MODULE = 'dsh-arya-image-gen/agent-toolset'
+export const ARYA_IMAGE_TOOLSET_MODULE = '@aryacode/dsh-arya-image-gen/agent-toolset'
 
 /** One plugin row in a preset definition. */
 export interface PresetRow {

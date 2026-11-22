@@ -6,7 +6,7 @@
  * from a generated one: same attachment store, same workspace folder, same
  * provenance line, same save-failure behaviour.
  *
- * @module dsh-arya-image-gen/save-generated
+ * @module @aryacode/dsh-arya-image-gen/save-generated
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'

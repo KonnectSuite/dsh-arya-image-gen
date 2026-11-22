@@ -21,9 +21,9 @@ const npm = [
 ].find(existsSync)
 assert.ok(npm, 'npm must be installed with Node for the isolated package check')
 const temporaryRoot = realpathSync(tmpdir())
-const home = realpathSync(await mkdtemp(join(temporaryRoot, 'dsh-image-gen-package-')))
+const home = realpathSync(await mkdtemp(join(temporaryRoot, 'dsh-arya-image-gen-package-')))
 assert.equal(dirname(home), temporaryRoot)
-assert.ok(basename(home).startsWith('dsh-image-gen-package-'))
+assert.ok(basename(home).startsWith('dsh-arya-image-gen-package-'))
 
 try {
   console.log('Packing the current plugin build for an independent installation...')
@@ -34,7 +34,7 @@ try {
   const tarball = join(home, packed[0].filename)
   await writeFile(join(home, 'package.json'), JSON.stringify({
     name: 'image-gen-package-verification', private: true, type: 'module', dependencies: {
-      'dsh-image-gen': `file:${tarball.replaceAll('\\', '/')}`,
+      '@aryacode/dsh-arya-image-gen': `file:${tarball.replaceAll('\\', '/')}`,
       '@deepseek-ai/cordis': '4.0.5',
       '@deepseek-ai/schemastery': '3.18.4',
       '@deepseek-ai/dsh-app-boot': '0.2.0-rc.2',
@@ -49,7 +49,7 @@ try {
   execFileSync(process.execPath, [npm, 'install', '--ignore-scripts', '--no-audit', '--no-fund'], {
     cwd: home, stdio: 'inherit', timeout: 180_000,
   })
-  assert.ok(!realpathSync(join(home, 'node_modules', 'dsh-image-gen')).startsWith(root), 'The installed plugin must not link to the source checkout')
+  assert.ok(!realpathSync(join(home, 'node_modules', '@aryacode', 'dsh-arya-image-gen')).startsWith(root), 'The installed plugin must not link to the source checkout')
   await copyFile(join(root, 'scripts', 'fixtures', 'package-settings.mjs'), join(home, 'verify.mjs'))
   for (const version of ['3.18.4', '3.18.2']) {
     execFileSync(process.execPath, [join(home, 'verify.mjs'), version], { cwd: home, stdio: 'inherit', timeout: 60_000 })

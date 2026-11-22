@@ -33,7 +33,7 @@
  * "keep the stock rows", with one warning, because a double compressor is better
  * than silently disabling compaction when bili is not actually compressing.
  *
- * @module dsh-arya-image-gen/agent-preset/billion-context
+ * @module @aryacode/dsh-arya-image-gen/agent-preset/billion-context
  */
 
 /** The service bili's always-on gate entry publishes. Internal; bili 0.1.212. */

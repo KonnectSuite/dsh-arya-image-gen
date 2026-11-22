@@ -13,7 +13,7 @@ import Settings from '@deepseek-ai/dsh-settings'
 const home = dirname(fileURLToPath(import.meta.url))
 const version = process.argv[2]
 const legacy = version === '3.18.2'
-const pluginURL = import.meta.resolve('dsh-image-gen')
+const pluginURL = import.meta.resolve('@aryacode/dsh-arya-image-gen')
 if (legacy) {
   // Simulate a profile resolving an older schemastery copy. The actual
   // published 3.18.2 is loaded only by the installed plugin; the host stays 0.2.
@@ -24,7 +24,7 @@ if (legacy) {
     return nextResolve(specifier, context)
   } })
 }
-const plugin = await import('dsh-image-gen')
+const plugin = await import('@aryacode/dsh-arya-image-gen')
 const profileDir = join(home, `profile-${version}`)
 initProfile(profileDir, ['test-settings-bundle'])
 const bundle = join(profileDir, 'node_modules', 'test-settings-bundle')

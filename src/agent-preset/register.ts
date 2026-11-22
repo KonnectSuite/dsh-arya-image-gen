@@ -19,7 +19,7 @@
  * stock summary rows disabled. The wait never exceeds the resolver's bounded
  * poll, and a fiber that is disposed while waiting registers nothing.
  *
- * @module dsh-arya-image-gen/agent-preset/register
+ * @module @aryacode/dsh-arya-image-gen/agent-preset/register
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveStandDown } from './billion-context.js'

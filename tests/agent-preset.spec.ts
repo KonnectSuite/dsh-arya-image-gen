@@ -62,7 +62,7 @@ const CORE_MODULES: Record<string, string> = {
   'tool-ask-user': '@deepseek-ai/dsh-tool-ask-user',
   'tool-web': '@deepseek-ai/dsh-tool-web',
   'present': '@deepseek-ai/dsh-tool-present',
-  'arya-image-toolset': 'dsh-arya-image-gen/agent-toolset',
+  'arya-image-toolset': '@aryacode/dsh-arya-image-gen/agent-toolset',
 }
 
 /** Child rows of a `cordis:group` row, read through the row's untyped config. */

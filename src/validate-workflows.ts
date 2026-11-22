@@ -6,7 +6,7 @@
  * which are the two things that survive placeholder substitution unchanged. Type
  * checking a `{{width}}` string would only ever report the placeholder.
  *
- * @module dsh-arya-image-gen/validate-workflows
+ * @module @aryacode/dsh-arya-image-gen/validate-workflows
  */
 import type { ComfyUIWorkflowEntry } from './shared.js'
 import { comfyUIEndpointURL } from './shared.js'

@@ -8,7 +8,7 @@ not need a separate JSON per size.
 
 ## Already configured
 
-A fresh configuration starts with these four workflows already in place, named
+A fresh configuration starts with these five workflows already in place, named
 `Qwen Image 2.1 - ...`; there is no import step. They live in this repository at
 [`docs/workflows/`](workflows/) and, for a local ComfyUI install, the same files
 are copied to `<ComfyUI>/user/default/workflows/Arya Image (Plugin API)/` so you

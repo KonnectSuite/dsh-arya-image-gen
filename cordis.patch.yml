@@ -1,5 +1,5 @@
 - insert:
     - id: image-gen
-      name: dsh-arya-image-gen
+      name: '@aryacode/dsh-arya-image-gen'
       config:
         provider: comfyui

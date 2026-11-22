@@ -19,7 +19,7 @@
  * session that loses its tools is worse than a session that pays for a few
  * extra schemas.
  *
- * @module dsh-arya-image-gen/agent-toolset
+ * @module @aryacode/dsh-arya-image-gen/agent-toolset
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-tools'

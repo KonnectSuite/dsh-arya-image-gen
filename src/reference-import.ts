@@ -11,7 +11,7 @@
  * whole point: a reference photo of the real subject produces a far more
  * accurate image than a paragraph describing it.
  *
- * @module dsh-arya-image-gen/reference-import
+ * @module @aryacode/dsh-arya-image-gen/reference-import
  */
 import { createHash } from 'node:crypto'
 import { lookup } from 'node:dns/promises'

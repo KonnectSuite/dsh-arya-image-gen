@@ -12,6 +12,9 @@
         "url": "https://github.com/KonnectSuite/dsh-arya-image-gen/issues"
     },
     "homepage": "https://github.com/KonnectSuite/dsh-arya-image-gen#readme",
+    "publishConfig": {
+        "access": "public"
+    },
     "main": "lib/index.js",
     "types": "lib/types/index.d.ts",
     "exports": {

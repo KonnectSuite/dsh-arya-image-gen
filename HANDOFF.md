@@ -1,16 +1,19 @@
-# Arya Image Gen — Handoff Notes (2026-11-22 ~01:25 UTC)
+# Arya Image Gen — Handoff Notes (2026-11-22 ~01:50 UTC)
 
 Repo: `C:\Users\KNPhu\AryaCode\KonnectSuite\dsh-arya-image-gen` (git `main`). The public-docs
 overhaul is the commit whose subject ends `(v0.20.0)` — `67a28b6` — followed by the fixture and
-publish-config commit `7357bb2` and the 0.20.1 packaging fix. Before this work HEAD was
-`d1739da5a92e97e2b44ee4a74e30bb804bb08823` (2026-11-09), and the only tag in the repository is
-`v0.19.1`.
+publish-config commit `7357bb2`, the 0.20.1 packaging fix `d47b456`, the index-generator fix, and
+the 0.20.2 release commit that carries this file. Before this work HEAD was
+`d1739da5a92e97e2b44ee4a74e30bb804bb08823` (2026-11-09); the only tag in the repository before
+today is `v0.19.1`.
 
-Bundle: `@aryacode/dsh-arya-image-gen` **0.20.1, published to npm on 2026-11-22** (0.20.0 went
-up the same day and 0.20.1 replaces it for packaging reasons — `docs/releases/v0.20.1.md`).
-The archive is 1.7 MB over 84 files. npm now serves the **scoped** name; the unscoped
-`dsh-arya-image-gen` still serves 0.19.2 and below and is deprecated in place, never
-unpublished. The registry's own publish time is the authority for dates, not this file.
+Bundle: `@aryacode/dsh-arya-image-gen` **0.20.2, published to npm on 2026-11-22**. 0.20.0 went up
+first, 0.20.1 replaced it for packaging reasons (`docs/releases/v0.20.1.md`), and 0.20.2 exists
+because the archive carried the pre-rewrite README and npm renders the package page from the
+copy inside the tarball (`docs/releases/v0.20.2.md`) — no runtime code changed. The archive is
+1.7 MB over 84 files. npm now serves the **scoped** name; the unscoped `dsh-arya-image-gen` still
+serves 0.19.2 and below and is deprecated in place, never unpublished. The registry's own publish
+time is the authority for dates, not this file.
 
 ## Goal (evolution)
 
@@ -55,35 +58,43 @@ else in this file is lead-authored and reviewed.
 
 ## File status
 
-- `README.md` ✅ rewritten (278 lines) in Gate-1 order. Hero
-  `docs/assets/readme/hero-arya-wide.webp`; the npm badge and the npm link point at
-  `dsh-arya-image-gen` because that is the name npm serves today; the install section leads
-  with the command that works now and states the rename as "changes at 0.20.0 … the scoped name
-  does not resolve on npm until the 0.20.0 release is out". Added the sections the old README
-  never had: Requirements before Install, Where it appears, First run, Settings table,
-  Removing it (every trace), Troubleshooting table.
+- `README.md` ✅ rewritten (294 lines) in Gate-1 order. Hero
+  `docs/assets/readme/hero-arya-wide.webp`; the npm badge, the npm link and the install command
+  all read `@aryacode/dsh-arya-image-gen`, and the paragraph under the install block says the
+  rename is a rename: the plugin id stays `dsh-image-gen`, so endpoint, workflows, gallery and
+  saved images come across when the old package is removed and the new one added. Added the
+  sections the old README never had: Requirements before Install, Where it appears, First run,
+  Settings table, Removing it (every trace), Troubleshooting table.
 - `README.zh.md` ✖ not written — user chose English-only this pass; recorded as AGENTS rule 10
   and as a known gap below.
-- `CHANGELOG.md` ✅ new, newest-first, 28 stable versions reconstructed from npm publish times;
-  `## 0.20.1 — 2026-11-22` and `## 0.20.0 — 2026-11-22` sit above `## 0.19.2 — 2026-11-09`,
-  dated from the registry packument (the intro explains that convention).
+- `CHANGELOG.md` ✅ new, newest-first: the 28 pre-0.20 stable versions reconstructed from npm
+  publish times, plus `## 0.20.2 — 2026-11-22`, `## 0.20.1 — 2026-11-22` and
+  `## 0.20.0 — 2026-11-22` above `## 0.19.2 — 2026-11-09`, dated from the registry packument (the
+  intro explains that convention).
 - `docs/index.md` ✅ new: a map by task (install / ComfyUI install / workflows / own graph /
   reference images / remote ComfyUI / changelog / issues / security / contributing), a
   "what lives where" table, and a "not part of the plugin" list.
 - `docs/releases/v0.20.0.md` ✅ new long-form note: why the scoped name, what moves and what does
   not (with line refs), the release command, the docs inventory, the known gaps.
-- `index.json` (root) ✅ new: one entry. It was committed with the name kept **unscoped**
+- `index.json` (root, 80 lines) ✅ new: one entry. It was committed with the name kept **unscoped**
   `dsh-arya-image-gen` — a scoped entry listing another package's versions would be a lie — with
   28 stable versions, real `publishTimestamp` values and per-version `engines`
   (0.11.0 predates the declaration, so it carries none), newest `0.19.2`
   (`1794242093` = 2026-11-09T16:34:53Z), `icon: "icon.svg"`.
   `scripts/sync-market-index.mjs` has since flipped that entry to `package.json`'s name, so the
-  listing now reads `@aryacode/dsh-arya-image-gen` and carries the versions npm serves under it;
-  the pre-rename rows left with the old package name. Never hand-edit the version list.
-- `scripts/sync-market-index.mjs` ✅ new: rebuilds that file from `npm view <name> --json`
-  (`shell:true` on Windows — npm is a `.cmd` shim and EINVALs otherwise), refuses when the
-  packument has no `time`/`versions`, skips prereleases and the `0.0.0-stage` placeholder,
-  sorts ascending by publish time, `--dry-run`, `--check` (exit 1 on drift).
+  listing now reads `@aryacode/dsh-arya-image-gen` and carries only the versions npm serves under
+  it — 0.20.0 `1795310393` and 0.20.1 `1795310617`, both `engines.dsh >=0.1.7 <1`. The pre-rename
+  rows left with the old package name and stay installable by it. Never hand-edit the version
+  list.
+- `scripts/sync-market-index.mjs` ✅ new: rebuilds that file from the **registry packument over
+  HTTPS** (`https://registry.npmjs.org/<name>`, scoped name keeps its slash), refuses an answer
+  with no `time`/`versions` or with an array-shaped `versions`, skips prereleases and the
+  `0.0.0-stage` placeholder, sorts ascending by publish time, `--dry-run`, `--check` (exit 1 on
+  drift). It read `npm view <name> --json` first and that was wrong: the CLI answers with an
+  array-wrapped abbreviated summary whose `versions` is a flat list of version strings and whose
+  per-version manifests are dropped, so the publish-time lookup hit an array index and the script
+  died on `npm has no publish time for @aryacode/dsh-arya-image-gen@0` — and `engines.dsh` per
+  version was never in that document to begin with.
 - `icon.svg` ✅ new 64×64 mark in the family palette (dark rounded square, picture frame, pink
   dot, mountain, teal baseline) — the same convention as `dsh-arya-computer-use/icon.svg`, not
   the brand-kit mascot. Wired through `package.json` `exports["./icon"]` + `files`, with **no**
@@ -146,23 +157,42 @@ else in this file is lead-authored and reviewed.
   against the source, and two false doc claims were fixed: `docs/comfyui-workflows.md` said
   "four workflows" (there are five) and `docs/install-comfyui.md` credited the plugin with a
   `comfy-mcp` engine it does not have.
+- `node ../dsh-arya-market/scripts/release-plugin.mjs --dir ../dsh-arya-image-gen` ran to
+  `released @aryacode/dsh-arya-image-gen@0.20.1 · npm ok · catalogue ok · sha256 0a6f6d7a8692…`
+  — the four conditions proved (npm serves the version, the catalogue lists it, the recorded
+  sha256 matches the tarball the registry serves, `check-catalogue-parity.mjs` exits 0). It also
+  reported that this machine's pack (`826641c8d89f…`) is not the registry copy's bytes: `README.md`
+  is in `files` and was rewritten after 0.20.1 was published. That is why 0.20.2 exists.
+- GitHub repository settings applied with `gh api -X PATCH repos/KonnectSuite/dsh-arya-image-gen`:
+  About and homepage describe the plugin and point at the scoped npm page, `has_issues=true`,
+  topics `aryacode, comfyui, deepseek-harness, dsh-plugin, image-generation, infinite-canvas`.
+- `npm deprecate dsh-arya-image-gen "renamed to @aryacode/dsh-arya-image-gen — install the scoped
+  name (0.20.0 and newer); this name still serves 0.19.2 and below"` → 29 notices (0.0.0-stage plus
+  0.11.0…0.19.2). `npm view dsh-arya-image-gen@0.19.2 deprecated` prints it, and `dist-tags.latest`
+  under the old name stays 0.19.2. Nothing was unpublished.
+- The market manifest names the scoped package now: `dsh-arya-market/arya-plugins.json` entry
+  `name` moved, the retired name added to top-level `legacyNames`, and `data/arya-sources.json`
+  regenerated by `node scripts/sync-arya-sources.mjs` (never by hand). Manifest commit `9810a15`,
+  pushed to `origin/main`.
 
 ## Remaining
 
-1. **npm is published; the rest of the ritual is one command.** 0.20.0 and 0.20.1 went to npm
-   under the scoped name from this machine with the owner's npm auth. The remaining steps belong
-   to `node ../dsh-arya-market/scripts/release-plugin.mjs --dir ../dsh-arya-image-gen`, which
-   detects a version the registry already serves, skips the publish, and carries on: regenerate
-   and commit `index.json`, tag `v0.20.1`, push, cut the GitHub Release, reconcile the market
-   catalogue and prove the four conditions. It also refuses a dirty tree, so commit first.
-   The market manifest `dsh-arya-market/arya-plugins.json` still names the **unscoped** package,
-   so the catalogue keeps cataloguing 0.19.2 until that entry's `name` is moved to
-   `@aryacode/dsh-arya-image-gen`; retiring the old name is `npm deprecate`, never unpublish
-   (`dsh-arya-market/AGENTS-PLUGINS.md` §7).
-2. **GitHub repository settings are not files.** About still points at
-   `shanliuling/dsh-image-gen#readme`; Issues are disabled (`has_issues=false`), so the new issue
-   templates do nothing until Issues is switched on; topics should be
-   `deepseek-harness`, `dsh-plugin`, `comfyui`, `image-generation`. All owner-only.
+1. **The catalogue rename is the one non-file change left.** The release step recorded
+   `@aryacode/dsh-arya-image-gen` on the market's `catalog` branch, but the retired
+   `dsh-arya-image-gen` entry is still listed there — `reconcile-catalogue.mjs` never prunes an
+   entry the manifest stopped naming — and the new entry carries no `previousNpm`. Both have to
+   land in ONE conditional PUT of `data/arya-plugins.json` to the `catalog` branch (blob sha from
+   `gh api repos/KonnectSuite/dsh-arya-market/contents/data/arya-plugins.json?ref=catalog`):
+   `validateAryaRegistry` (`dsh-arya-market/src/arya.ts`, E13) refuses a `previousNpm` while that
+   former name is still a live entry, and every release URL is derived from the entry's own name,
+   so the 28 pre-rename releases cannot follow the entry across the rename. Then re-run
+   `node scripts/check-catalogue-parity.mjs`. Always pass the KonnectSuite context explicitly:
+   from that checkout `gh` infers the **upstream** `dsh-market/dsh-market`, so a bare `gh` call
+   there is not talking to your repository.
+2. **GitHub repository settings are closed** (2026-11-22, `gh api -X PATCH`): About and homepage
+   describe the plugin and point at the scoped npm page, `has_issues=true` so the issue templates
+   do something, topics `aryacode, comfyui, deepseek-harness, dsh-plugin, image-generation,
+   infinite-canvas`. Owner-only, already applied; nothing left unless a new surface appears.
 3. **`pnpm run test:package` is green, after a rewrite.** `scripts/fixtures/package-settings.mjs`
    asserted the removed multi-provider card (`Default model`, `Editing model`, `googleNative`,
    `openaiCompatEditFormat`). It is now 300 lines against the ComfyUI card, and the timing rules
@@ -177,14 +207,17 @@ else in this file is lead-authored and reviewed.
    asserts the host-level refusal instead of a message in the card.
 4. **Docs are English-only** while the two sibling public plugins ship `README.zh.md`. Writing
    the mirror is the largest remaining docs gap.
-5. **GitHub Releases start at 0.20.0.** No tag exists below `v0.19.1`, and `release.yml` refuses
-   a tag older than the newest CHANGELOG heading, so back-filling `v0.11.0…v0.19.2` would fail;
-   those versions are documented by `docs/releases/` and `CHANGELOG.md` instead.
-6. **Market-drift guard is deferred to the release.** Once the scoped package is on npm, add a CI
-   step running `node scripts/sync-market-index.mjs --check`, and a test asserting the newest
-   `index.json` version matches `package.json`. Both were skipped deliberately: the listing's
-   newest is 0.19.2 (published) while `package.json` says 0.20.0 (unreleased), so either check
-   would fail today.
+5. **GitHub Releases start at 0.20.2.** The 0.20.0 and 0.20.1 runs stopped inside the GitHub step
+   (the index generator, since fixed), so neither was tagged: the only tag before this release is
+   `v0.19.1`, and `v0.20.2` is cut by the release step — or by hand if that step stops again, which
+   is what its own warning says to do. `release.yml` refuses a tag older than the newest
+   CHANGELOG heading, so back-filling `v0.11.0…v0.19.2` would fail; those versions are documented
+   by `docs/releases/` and `CHANGELOG.md` instead.
+6. **Market-drift guard stays out of CI.** A `sync-market-index.mjs --check` step, and a test that
+   the newest `index.json` version matches `package.json`, are both green once a release is out —
+   and both go red in the window between a version-bump commit and its publish, which is every
+   release. The release step regenerates the listing itself, so the guard would buy a red CI for a
+   drift the ritual already closes. Deliberate, recorded here.
 
 Context management: blocks b2–b18 hold the exploration and decisions; the plan of record is in
 b8. Nothing here needs a subagent — the user asked the lead to finish alone.

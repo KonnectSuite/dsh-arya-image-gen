@@ -2,6 +2,14 @@
 
 All published versions of Arya Image Gen, newest first. Long-form release notes for every version live in [`docs/releases/`](docs/releases/); the date in each heading is that version's npm publish date (UTC) from the registry packument, except 0.8.6, which predates npm publishing. A version that is committed and versioned but not yet on npm says so in its heading instead of carrying a date.
 
+## 0.20.2 — 2026-11-22
+
+**Fixed — the installed package stopped telling users to install the retired name.** `README.md` is in `files`, and npm renders a package page from the copy inside the tarball. 0.20.0 and 0.20.1 were packed before the README rewrite landed, so the page for `@aryacode/dsh-arya-image-gen` still read `dsh plugin --profile web add dsh-arya-image-gen` and pointed its badge at the deprecated name — an install line that now prints a deprecation notice. No runtime code changed between 0.20.1 and 0.20.2; this version exists so the archive carries the install instructions that work. Long-form: [`docs/releases/v0.20.2.md`](docs/releases/v0.20.2.md).
+
+**Fixed — `scripts/sync-market-index.mjs` reads the registry packument, not `npm view`.** The CLI answers with an abbreviated document: an array-wrapped summary whose `versions` is a flat list of version strings, with the per-version manifests dropped. Iterating it yields array indexes, so the generator died on `npm has no publish time for @aryacode/dsh-arya-image-gen@0` and the listing would have drifted exactly like the `0.15.0` copy this script replaced. It fetches `https://registry.npmjs.org/<name>` over HTTPS, the only source that carries both the publish time and the `engines.dsh` range each version declared. `index.json` regenerated against it: one entry `@aryacode/dsh-arya-image-gen`, two versions, `engines.dsh >=0.1.7 <1`.
+
+Tests: 422 passed, 1 skipped. `pnpm run test:package` passes both schemastery branches against the packed tarball.
+
 ## 0.20.1 — 2026-11-22
 
 **Fixed — the archive now ships the icon the manifest advertises.** `package.json` maps `exports["./icon"]` to `icon.svg`, but `icon.svg` was missing from `files`, so the 0.20.0 tarball had no icon to serve. It is packed from 0.20.1, the same way `@aryacode/dsh-plugin-arya-computer-use` ships its own.

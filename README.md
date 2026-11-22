@@ -84,7 +84,7 @@ on npm — 0.19.2 and below still install by it — but it is deprecated, and no
 
 ### From the plugin market
 
-- **AryaCode:** open **Plugins → Arya Plugin Market**, find **Arya Image Gen**, install, restart. The market entry is kept in step with npm, so the version you get is the version npm serves.
+- **AryaCode:** open **Plugins → Arya Plugin Market**, find **Arya Image Gen**, install, restart. The market entry is kept in step with npm, so the version you get is the version npm serves. An install made under the pre-rename entry stays put: the catalogue declares `dsh-arya-image-gen` as a former name of this package, so the old install resolves to this one and updates in place.
 - **Any DSH host with plugin indexes (0.2.1 and later):** open **Plugins**, enable **Custom plugin indexes** under **Experimental plugins** if your build gates it, go to **Discover → Add index source** and enter
   `https://cdn.jsdelivr.net/gh/KonnectSuite/dsh-arya-image-gen@latest/index.json`
   then install **Arya Image Gen** from the listing and restart.
